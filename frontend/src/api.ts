@@ -1,6 +1,18 @@
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'https://localhost:7226'
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
 let csrfToken = ''
+
+export class ApiError extends Error {
+  public readonly errors: Record<string, string[]>
+  public readonly status: number
+  constructor(message: string, errors: Record<string, string[]> = {}, status = 0) { super(message); this.errors = errors; this.status = status }
+  static async from(response: Response) {
+    try {
+      const body = await response.json() as { detail?: string, error?: string, errors?: Record<string, string[]> }
+      return new ApiError(body.detail ?? body.error ?? '', body.errors ?? {}, response.status)
+    } catch { return new ApiError('', {}, response.status) }
+  }
+}
 
 export async function ensureCsrfToken() {
   if (csrfToken) return csrfToken
@@ -24,5 +36,5 @@ export async function request(path: string, init: RequestInit = {}) {
     headers.set('X-CSRF-TOKEN', await ensureCsrfToken())
   }
 
-  return fetch(`${apiBaseUrl}${path}`, { ...init, credentials: 'include', headers })
+  return fetch(`${apiBaseUrl}${path}`, { ...init, credentials: 'include', cache: 'no-store', headers })
 }

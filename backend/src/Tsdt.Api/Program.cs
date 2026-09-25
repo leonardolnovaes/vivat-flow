@@ -1,11 +1,15 @@
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using Tsdt.Api.Audit;
+using Tsdt.Api.Customers;
 using Tsdt.Api.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
 var localFrontendSameSite = builder.Environment.IsDevelopment() ? SameSiteMode.None : SameSiteMode.Lax;
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? (builder.Environment.IsEnvironment("Testing") ? "Host=localhost;Database=testing" : throw new InvalidOperationException("ConnectionStrings:DefaultConnection must be configured."));
@@ -22,7 +26,7 @@ builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
     options.Lockout.AllowedForNewUsers = true;
     options.Lockout.MaxFailedAccessAttempts = 5;
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-    options.Password.RequiredLength = 12;
+    options.Password.RequiredLength = PasswordRules.MinimumLength;
     options.Password.RequireDigit = true;
     options.Password.RequireLowercase = true;
     options.Password.RequireUppercase = true;
@@ -99,6 +103,11 @@ auth.MapGet("/csrf", (HttpContext context, IAntiforgery antiforgery) =>
     var tokens = antiforgery.GetAndStoreTokens(context);
     return Results.Ok(new CsrfTokenResponse(tokens.RequestToken ?? throw new InvalidOperationException("Antiforgery did not issue a request token.")));
 });
+auth.MapGet("/password-policy", (IOptions<IdentityOptions> identityOptions) =>
+{
+    var password = identityOptions.Value.Password;
+    return Results.Ok(new PasswordPolicyResponse(password.RequiredLength, password.RequireDigit, password.RequireLowercase, password.RequireUppercase, password.RequireNonAlphanumeric, PasswordPolicyDescription(password)));
+});
 auth.MapPost("/login", async (LoginRequest request, HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager) =>
 {
     try { await antiforgery.ValidateRequestAsync(context); }
@@ -120,14 +129,14 @@ auth.MapGet("/me", async (HttpContext context, UserManager<ApplicationUser> user
     }
     return Results.Ok(await CreateCurrentUserResponseAsync(user, userManager));
 }).RequireAuthorization();
-auth.MapPost("/change-password", async (ChangePasswordRequest request, HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager) =>
+auth.MapPost("/change-password", async (ChangePasswordRequest request, HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, IOptions<IdentityOptions> identityOptions) =>
 {
     try { await antiforgery.ValidateRequestAsync(context); }
     catch (AntiforgeryValidationException) { return Results.BadRequest(); }
     var user = await userManager.GetUserAsync(context.User);
     if (user is null || !user.IsActive) return Results.Unauthorized();
     var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
-    if (!result.Succeeded) return Results.ValidationProblem(new Dictionary<string, string[]> { ["password"] = ["The password change request was not accepted."] });
+    if (!result.Succeeded) return IdentityValidationProblem(result, "newPassword", PasswordPolicyDescription(identityOptions.Value.Password));
     user.MustChangePassword = false;
     await userManager.UpdateAsync(user);
     await signInManager.RefreshSignInAsync(user);
@@ -166,14 +175,13 @@ adminUsers.MapPost("", async (CreateUserRequest request, HttpContext context, IA
     if (!await ValidateAntiforgeryAsync(context, antiforgery)) return Results.BadRequest();
     var fullName = request.FullName?.Trim();
     var role = request.Role?.Trim().ToUpperInvariant();
-    if (string.IsNullOrWhiteSpace(fullName)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["fullName"] = ["Full name is required."] });
-    if (!IsApplicationRole(role)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["role"] = ["The role is not valid."] });
-    var email = request.Email?.Trim();
-    if (string.IsNullOrWhiteSpace(email)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["email"] = ["Email is required."] });
-    if (await userManager.FindByEmailAsync(email) is not null) return Results.Conflict(new { error = "An account with this email already exists." });
+    var email = NormalizeEmail(request.Email);
+    var validation = ValidateUserInput(fullName, email, role);
+    if (validation is not null) return validation;
+    if (await userManager.FindByEmailAsync(email!) is not null) return Results.Conflict(new { errors = new Dictionary<string, string[]> { ["email"] = ["Já existe um usuário com este e-mail."] } });
 
     var temporaryPassword = passwordGenerator.Generate();
-    var user = new ApplicationUser { FullName = fullName, UserName = email, Email = email, EmailConfirmed = true, IsActive = true, MustChangePassword = true };
+    var user = new ApplicationUser { FullName = fullName!, UserName = email, Email = email, EmailConfirmed = true, IsActive = true, MustChangePassword = true };
     await using var transaction = await dbContext.Database.BeginTransactionAsync();
     var creation = await userManager.CreateAsync(user, temporaryPassword);
     if (!creation.Succeeded) return IdentityValidationProblem(creation);
@@ -182,6 +190,29 @@ adminUsers.MapPost("", async (CreateUserRequest request, HttpContext context, IA
     await AddAuditAsync(dbContext, await GetActorUserIdAsync(context, userManager), user.Id, "USER_CREATED", newRole: role);
     await transaction.CommitAsync();
     return Results.Created($"/api/admin/users/{user.Id}", new CreateUserResponse(await CreateUserAdministrationResponseAsync(user, userManager), temporaryPassword));
+});
+adminUsers.MapPut("/{id}", async (string id, UpdateUserRequest request, HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> userManager, ApplicationDbContext dbContext) =>
+{
+    if (!await ValidateAntiforgeryAsync(context, antiforgery)) return Results.BadRequest(new { error = "Não foi possível validar a solicitação. Atualize a página e tente novamente." });
+    var fullName = request.FullName?.Trim();
+    var email = NormalizeEmail(request.Email);
+    var validation = ValidateUserInput(fullName, email, IdentityRoles.User, validateRole: false);
+    if (validation is not null) return validation;
+    var user = await userManager.FindByIdAsync(id);
+    if (user is null) return Results.NotFound();
+    var emailChanged = !string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase);
+    if (emailChanged && await userManager.FindByEmailAsync(email!) is ApplicationUser existing && existing.Id != user.Id)
+        return Results.Conflict(new { errors = new Dictionary<string, string[]> { ["email"] = ["Já existe um usuário com este e-mail."] } });
+    user.FullName = fullName!;
+    user.Email = email;
+    user.UserName = email;
+    await using var transaction = await dbContext.Database.BeginTransactionAsync();
+    var update = await userManager.UpdateAsync(user);
+    if (!update.Succeeded) return IdentityValidationProblem(update);
+    if (emailChanged) await userManager.UpdateSecurityStampAsync(user);
+    await AddAuditAsync(dbContext, await GetActorUserIdAsync(context, userManager), user.Id, "USER_UPDATED");
+    await transaction.CommitAsync();
+    return Results.Ok(await CreateUserAdministrationResponseAsync(user, userManager));
 });
 adminUsers.MapPost("/{id}/activate", async (string id, HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> userManager, ApplicationDbContext dbContext) =>
 {
@@ -224,7 +255,7 @@ adminUsers.MapPut("/{id}/role", async (string id, ChangeUserRoleRequest request,
 {
     if (!await ValidateAntiforgeryAsync(context, antiforgery)) return Results.BadRequest();
     var role = request.Role?.Trim().ToUpperInvariant();
-    if (!IsApplicationRole(role)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["role"] = ["The role is not valid."] });
+    if (!IsApplicationRole(role)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["role"] = ["O perfil informado não é válido."] });
     await using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
     var user = await userManager.FindByIdAsync(id);
     if (user is null) return Results.NotFound();
@@ -252,6 +283,10 @@ adminUsers.MapPost("/{id}/reset-password", async (string id, HttpContext context
     var resetToken = await userManager.GeneratePasswordResetTokenAsync(user);
     var reset = await userManager.ResetPasswordAsync(user, resetToken, temporaryPassword);
     if (!reset.Succeeded) return IdentityValidationProblem(reset);
+    var clearLockout = await userManager.SetLockoutEndDateAsync(user, null);
+    if (!clearLockout.Succeeded) return IdentityValidationProblem(clearLockout);
+    var clearFailedAccessCount = await userManager.ResetAccessFailedCountAsync(user);
+    if (!clearFailedAccessCount.Succeeded) return IdentityValidationProblem(clearFailedAccessCount);
     user.MustChangePassword = true;
     var update = await userManager.UpdateAsync(user);
     if (!update.Succeeded) return IdentityValidationProblem(update);
@@ -260,6 +295,8 @@ adminUsers.MapPost("/{id}/reset-password", async (string id, HttpContext context
     await transaction.CommitAsync();
     return Results.Ok(new CreateUserResponse(await CreateUserAdministrationResponseAsync(user, userManager), temporaryPassword));
 });
+
+app.MapCustomerEndpoints();
 
 using (var scope = app.Services.CreateScope())
 {
@@ -289,7 +326,39 @@ static async Task<bool> ValidateAntiforgeryAsync(HttpContext context, IAntiforge
     try { await antiforgery.ValidateRequestAsync(context); return true; }
     catch (AntiforgeryValidationException) { return false; }
 }
-static IResult IdentityValidationProblem(IdentityResult result) => Results.ValidationProblem(new Dictionary<string, string[]> { ["identity"] = ["The request was not accepted."] });
+static IResult? ValidateUserInput(string? fullName, string? email, string? role, bool validateRole = true)
+{
+    var errors = new Dictionary<string, string[]>();
+    if (string.IsNullOrWhiteSpace(fullName)) errors["fullName"] = ["Informe o nome completo."];
+    else if (fullName.Length > 120) errors["fullName"] = ["O nome completo deve ter no máximo 120 caracteres."];
+    if (string.IsNullOrWhiteSpace(email)) errors["email"] = ["Informe o e-mail."];
+    else if (email.Length > 254 || !System.Net.Mail.MailAddress.TryCreate(email, out _)) errors["email"] = ["Informe um e-mail válido com no máximo 254 caracteres."];
+    if (validateRole && !IsApplicationRole(role)) errors["role"] = ["Selecione um perfil válido."];
+    return errors.Count == 0 ? null : Results.ValidationProblem(errors);
+}
+static string? NormalizeEmail(string? email) => string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
+static string PasswordPolicyDescription(PasswordOptions password)
+{
+    var requirements = new List<string> { $"pelo menos {password.RequiredLength} caracteres" };
+    if (password.RequireUppercase) requirements.Add("letra maiúscula");
+    if (password.RequireLowercase) requirements.Add("letra minúscula");
+    if (password.RequireDigit) requirements.Add("número");
+    if (password.RequireNonAlphanumeric) requirements.Add("símbolo");
+    return $"A senha deve ter {string.Join(", ", requirements)}.";
+}
+static IResult IdentityValidationProblem(IdentityResult result, string fallbackField = "identity", string? passwordDescription = null)
+{
+    var errors = result.Errors.Select(error => error.Code switch
+    {
+        "PasswordTooShort" => passwordDescription ?? "A senha não atende aos requisitos.",
+        "PasswordRequiresNonAlphanumeric" => passwordDescription ?? "A senha não atende aos requisitos.",
+        "PasswordRequiresDigit" => passwordDescription ?? "A senha não atende aos requisitos.",
+        "PasswordRequiresLower" => passwordDescription ?? "A senha não atende aos requisitos.",
+        "PasswordRequiresUpper" => passwordDescription ?? "A senha não atende aos requisitos.",
+        _ => "Não foi possível concluir a solicitação."
+    }).Distinct().ToArray();
+    return Results.ValidationProblem(new Dictionary<string, string[]> { [fallbackField] = errors });
+}
 static async Task<string> GetActorUserIdAsync(HttpContext context, UserManager<ApplicationUser> userManager) => (await userManager.GetUserAsync(context.User))?.Id ?? throw new UnauthorizedAccessException();
 static async Task<bool> IsLastActiveAdminAsync(ApplicationDbContext dbContext) => await dbContext.UserRoles.Join(dbContext.Roles, userRole => userRole.RoleId, role => role.Id, (userRole, role) => new { userRole.UserId, role.Name }).Join(dbContext.Users, item => item.UserId, user => user.Id, (item, user) => new { item.Name, user.IsActive }).CountAsync(item => item.IsActive && item.Name == IdentityRoles.Admin) == 1;
 static async Task AddAuditAsync(ApplicationDbContext dbContext, string actorUserId, string targetUserId, string action, string? oldRole = null, string? newRole = null)

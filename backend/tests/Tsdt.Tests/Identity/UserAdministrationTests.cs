@@ -63,6 +63,64 @@ public sealed class UserAdministrationTests
     }
 
     [Fact]
+    public async Task Temporary_password_lifecycle_authenticates_requires_change_and_invalidates_replaced_credentials()
+    {
+        using var factory = new IdentityWebApplicationFactory();
+        using var adminClient = await CreateReadyAdminClientAsync(factory);
+        var createdResponse = await SendAsync(adminClient, HttpMethod.Post, "/api/admin/users", new CreateUserRequest("Temporary Password User", "temporary-password@example.test", IdentityRoles.User));
+        var created = await createdResponse.Content.ReadFromJsonAsync<CreateUserResponse>();
+
+        Assert.Equal(HttpStatusCode.Created, createdResponse.StatusCode);
+        Assert.NotNull(created);
+        Assert.True(created.User.IsActive);
+        Assert.True(created.User.MustChangePassword);
+
+        using var firstTemporaryPasswordClient = IdentityTestClient.Create(factory);
+        var firstLogin = await IdentityTestClient.LoginAsync(firstTemporaryPasswordClient, created.User.Email, created.TemporaryPassword);
+        Assert.Equal(HttpStatusCode.OK, firstLogin.StatusCode);
+        var firstSession = await firstLogin.Content.ReadFromJsonAsync<CurrentUserResponse>();
+        Assert.True(firstSession!.MustChangePassword);
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            using var failedLoginClient = IdentityTestClient.Create(factory);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await IdentityTestClient.LoginAsync(failedLoginClient, created.User.Email, "Invalid1!Password")).StatusCode);
+        }
+        Assert.True(await IsLockedOutAsync(factory, created.User.Id));
+
+        var resetResponse = await SendAsync(adminClient, HttpMethod.Post, $"/api/admin/users/{created.User.Id}/reset-password");
+        var reset = await resetResponse.Content.ReadFromJsonAsync<CreateUserResponse>();
+        Assert.Equal(HttpStatusCode.OK, resetResponse.StatusCode);
+        Assert.NotNull(reset);
+        Assert.True(reset.User.MustChangePassword);
+        Assert.False(await IsLockedOutAsync(factory, created.User.Id));
+
+        using var previousTemporaryPasswordClient = IdentityTestClient.Create(factory);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await IdentityTestClient.LoginAsync(previousTemporaryPasswordClient, created.User.Email, created.TemporaryPassword)).StatusCode);
+
+        using var regeneratedTemporaryPasswordClient = IdentityTestClient.Create(factory);
+        var regeneratedLogin = await IdentityTestClient.LoginAsync(regeneratedTemporaryPasswordClient, created.User.Email, reset.TemporaryPassword);
+        Assert.Equal(HttpStatusCode.OK, regeneratedLogin.StatusCode);
+        Assert.True((await regeneratedLogin.Content.ReadFromJsonAsync<CurrentUserResponse>())!.MustChangePassword);
+
+        const string permanentPassword = "Permanent1!Password";
+        Assert.Equal(HttpStatusCode.NoContent, (await SendAsync(regeneratedTemporaryPasswordClient, HttpMethod.Post, "/api/auth/change-password", new ChangePasswordRequest(reset.TemporaryPassword, permanentPassword))).StatusCode);
+        Assert.False((await GetUserAsync(factory, created.User.Id)).MustChangePassword);
+
+        using var expiredTemporaryPasswordClient = IdentityTestClient.Create(factory);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await IdentityTestClient.LoginAsync(expiredTemporaryPasswordClient, created.User.Email, reset.TemporaryPassword)).StatusCode);
+        using var permanentPasswordClient = IdentityTestClient.Create(factory);
+        Assert.Equal(HttpStatusCode.OK, (await IdentityTestClient.LoginAsync(permanentPasswordClient, created.User.Email, permanentPassword)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(adminClient, HttpMethod.Post, $"/api/admin/users/{created.User.Id}/deactivate")).StatusCode);
+        using var inactiveUserClient = IdentityTestClient.Create(factory);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await IdentityTestClient.LoginAsync(inactiveUserClient, created.User.Email, permanentPassword)).StatusCode);
+
+        using var existingAdminClient = IdentityTestClient.Create(factory);
+        Assert.Equal(HttpStatusCode.OK, (await IdentityTestClient.LoginAsync(existingAdminClient, "admin@example.test", "Changed1!Password")).StatusCode);
+    }
+
+    [Fact]
     public async Task Admin_can_deactivate_and_activate_another_user_but_not_self_or_the_last_admin()
     {
         using var factory = new IdentityWebApplicationFactory();
@@ -225,6 +283,13 @@ public sealed class UserAdministrationTests
     {
         using var scope = factory.Services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Users.SingleAsync(user => user.Id == id);
+    }
+
+    private static async Task<bool> IsLockedOutAsync(IdentityWebApplicationFactory factory, string userId)
+    {
+        using var scope = factory.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        return await users.IsLockedOutAsync(await users.FindByIdAsync(userId) ?? throw new InvalidOperationException("User was not found."));
     }
 
     private static async Task<ApplicationUser> GetUserByEmailAsync(IdentityWebApplicationFactory factory, string email)

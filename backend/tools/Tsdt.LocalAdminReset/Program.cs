@@ -3,9 +3,15 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tsdt.Api.Identity;
 
-const string targetEmail = "admin@example.test";
+var targetEmail = Environment.GetEnvironmentVariable("LocalAdminReset__Email");
 
-if (!string.Equals(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"), "Development", StringComparison.OrdinalIgnoreCase))
+if (string.IsNullOrWhiteSpace(targetEmail))
+{
+    Console.Error.WriteLine("LocalAdminReset__Email must identify the local administrator to reset.");
+    return 1;
+}
+
+if (!LocalAdminResetPolicy.AllowsEnvironment(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"), targetEmail))
 {
     Console.Error.WriteLine("This utility can run only when ASPNETCORE_ENVIRONMENT is Development.");
     return 1;
@@ -35,6 +41,7 @@ if (!string.Equals(password, confirmation, StringComparison.Ordinal))
 }
 
 var services = new ServiceCollection();
+services.AddLogging();
 services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
 services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 {
@@ -63,13 +70,13 @@ if (user is null)
     return 1;
 }
 
-if (!user.IsActive)
+if (!LocalAdminResetPolicy.AllowsTarget(user.IsActive, true))
 {
     Console.Error.WriteLine("The target administrator is inactive. No changes were made.");
     return 1;
 }
 
-if (!await userManager.IsInRoleAsync(user, IdentityRoles.Admin))
+if (!LocalAdminResetPolicy.AllowsTarget(user.IsActive, await userManager.IsInRoleAsync(user, IdentityRoles.Admin)))
 {
     Console.Error.WriteLine("The target user is not an ADMIN. No changes were made.");
     return 1;
@@ -102,7 +109,7 @@ if (!securityStampResult.Succeeded || string.Equals(previousSecurityStamp, user.
 
 await transaction.CommitAsync();
 
-Console.WriteLine("Password reset completed for admin@example.test.");
+Console.WriteLine("Password reset completed for the configured local administrator.");
 Console.WriteLine("ADMIN role preserved; MustChangePassword is enabled; existing sessions were invalidated.");
 return 0;
 

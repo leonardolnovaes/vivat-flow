@@ -13,6 +13,9 @@
 .env
 .env.*
 !.env.example
+.local/
+.qa-build/
+.tools/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
