@@ -20,7 +20,7 @@ const cnpj = (seed: number) => {
 }
 
 async function login(page: Page, email: string, password: string) {
-  await page.goto('/')
+  await page.goto(process.env.PLAYWRIGHT_BASE_URL!)
   await page.getByLabel('E-mail').fill(email)
   await page.getByLabel('Senha').fill(password)
   const response = page.waitForResponse(candidate => candidate.url().endsWith('/api/auth/login') && candidate.request().method() === 'POST')
@@ -38,16 +38,8 @@ async function completePasswordChange(page: Page, current: string, replacement: 
 }
 
 async function readyAdmin(page: Page) {
-  let currentPassword = adminPassword!
-  let loginResponse = await login(page, adminEmail!, currentPassword)
-  if (loginResponse.status() === 401) { currentPassword = 'E2eAdmin1!Password'; loginResponse = await login(page, adminEmail!, currentPassword) }
-  expect(loginResponse.status()).toBe(200)
-  const passwordHeading = page.getByRole('heading', { name: 'Alterar senha' })
-  const administrationButton = page.getByRole('button', { name: /^Administra/ })
-  await Promise.race([passwordHeading.waitFor({ state: 'visible' }), administrationButton.waitFor({ state: 'visible' })])
-  if (await passwordHeading.isVisible()) {
-    await completePasswordChange(page, currentPassword, 'E2eAdmin1!Password', 'admin')
-  }
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: /^Administra/ })).toBeVisible()
   await page.getByRole('button', { name: 'Clientes' }).click()
   await expect(page.getByRole('heading', { name: 'Clientes' })).toBeVisible()
 }
@@ -77,7 +69,8 @@ async function createCustomer(page: Page, suffix: string, seed: number) {
   return { legalName, id: page.url().split('/').pop()! }
 }
 
-test.describe.serial('Customers isolated E2E', () => {
+test.describe.configure({ mode: 'parallel' })
+test.describe('Customers isolated E2E', () => {
   test('ADMIN completes the customer, contact, unit, lifecycle and persistence journey', async ({ page }) => {
     await readyAdmin(page)
     const customer = await createCustomer(page, 'Customer', 1)
@@ -117,13 +110,14 @@ test.describe.serial('Customers isolated E2E', () => {
     await expect(page.getByText(customer.legalName)).toBeVisible()
   })
 
-  test('MANAGER can mutate Customers while USER remains read-only in UI, routing and API', async ({ newIsolatedPage }) => {
+  test('MANAGER can mutate Customers while USER remains read-only in UI, routing and API', async ({ newIsolatedPage, browser }) => {
     const admin = await newIsolatedPage()
     await readyAdmin(admin)
     const customer = await createCustomer(admin, 'Access', 2)
     const managerAccount = await createAccount(admin, 'MANAGER')
     const userAccount = await createAccount(admin, 'USER')
-    const manager = await newIsolatedPage()
+    const managerContext = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+    const manager = await managerContext.newPage()
     await login(manager, managerAccount.email, managerAccount.temporary)
     await completePasswordChange(manager, managerAccount.temporary, 'E2eManager1!Password')
     await expect(manager.getByRole('button', { name: 'Clientes' })).toBeVisible()
@@ -131,7 +125,8 @@ test.describe.serial('Customers isolated E2E', () => {
     await manager.goto(`/clientes/${customer.id}/editar`)
     await expect(manager.getByRole('button', { name: 'Salvar alterações' })).toBeVisible()
 
-    const user = await newIsolatedPage()
+    const userContext = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+    const user = await userContext.newPage()
     await login(user, userAccount.email, userAccount.temporary)
     await completePasswordChange(user, userAccount.temporary, 'E2eUser1!Password')
     await user.goto('/clientes')
@@ -142,14 +137,13 @@ test.describe.serial('Customers isolated E2E', () => {
     await expect(user.getByRole('heading', { name: 'Acesso negado' })).toBeVisible()
     const status = await user.evaluate(async () => (await fetch('/api/customers', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ legalName: 'Blocked', cnpj: '04252011000110' }) })).status)
     expect(status).toBe(403)
-    await admin.close(); await manager.close(); await user.close()
+    await admin.close(); await managerContext.close(); await userContext.close()
   })
 
   test('real stale writes are rejected and missing CSRF is rejected', async ({ newIsolatedPage }) => {
     const first = await newIsolatedPage(); const second = await newIsolatedPage()
     await readyAdmin(first)
     const customer = await createCustomer(first, 'Concurrency', 3)
-    await login(second, adminEmail!, 'E2eAdmin1!Password')
     await second.goto(`/clientes/${customer.id}/editar`)
     await first.goto(`/clientes/${customer.id}/editar`)
     await first.getByLabel('Nome fantasia').fill('Valor atualizado A')

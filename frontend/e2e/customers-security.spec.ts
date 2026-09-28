@@ -85,10 +85,14 @@ test('Server-owned Customer and child fields cannot be mass assigned', async ({ 
   expect(stored.units[0].isActive).toBe(true)
 })
 
-test('Unauthenticated Customer mutations cannot create data', async ({ page }) => {
+test('Unauthenticated Customer mutations cannot create data', async ({ browser }) => {
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+  const page = await context.newPage()
+  try {
   await page.goto('/')
   const input = customerInput(freshSeed(), { legalName: `E2E Anonymous ${unique()}` })
   expect((await api(page, 'POST', '/api/customers', input)).status).toBe(401)
+  } finally { await context.close() }
 })
 
 test('USER is denied direct mutations and inactive Customer visibility while MANAGER can mutate', async ({ newIsolatedPage }) => {

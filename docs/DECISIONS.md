@@ -81,3 +81,9 @@ Lightweight ADR log for MVP 1 decisions; later decisions may supersede an entry.
 
 **Decision:** Application users require `FullName`, have exactly one role in MVP 1, and are deactivated rather than deleted. ADMIN routes generate temporary passwords server-side and reveal them only once. The last active ADMIN cannot be deactivated or moved to another role.
 **Why:** This supports accountable operational assignments while keeping initial administration small and preventing accidental loss of administrative access. Automated recovery and email delivery remain out of scope.
+
+## ADR-017 — Quote commercial boundary and authorization
+
+**Decision:** Quotes are commercial/management records. The `CommercialAdmin` policy is ADMIN-only in this module; operational USER and MANAGER accounts have no Quote access. Quotes retain immutable customer/service snapshots, use São Paulo annual numbering, and allow only `Draft → AwaitingApproval`, explicit reopen to Draft, then approval, rejection, or cancellation. Execution authorization is outside this module.
+
+**Why:** Commercial approval must remain controlled while preserving the proposal context that was actually reviewed.

@@ -47,18 +47,12 @@ public sealed class IdentityBootstrapper(
             MustChangePassword = true
         };
         var result = await userManager.CreateAsync(user, bootstrap.Password);
-        if (!result.Succeeded)
+        if (!result.Succeeded) logger.LogWarning("No bootstrap administrator was created because the configured credentials do not meet Identity validation requirements.");
+        else
         {
-            logger.LogWarning("No bootstrap administrator was created because the configured credentials do not meet Identity validation requirements.");
-            return;
+            var roleResult = await userManager.AddToRoleAsync(user, IdentityRoles.Admin);
+            if (!roleResult.Succeeded) throw new InvalidOperationException("Could not assign the ADMIN role to the bootstrap administrator.");
+            logger.LogInformation("Bootstrap administrator was created.");
         }
-
-        var roleResult = await userManager.AddToRoleAsync(user, IdentityRoles.Admin);
-        if (!roleResult.Succeeded)
-        {
-            throw new InvalidOperationException("Could not assign the ADMIN role to the bootstrap administrator.");
-        }
-
-        logger.LogInformation("Bootstrap administrator was created.");
     }
 }

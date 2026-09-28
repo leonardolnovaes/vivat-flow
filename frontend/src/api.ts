@@ -5,11 +5,12 @@ let csrfToken = ''
 export class ApiError extends Error {
   public readonly errors: Record<string, string[]>
   public readonly status: number
-  constructor(message: string, errors: Record<string, string[]> = {}, status = 0) { super(message); this.errors = errors; this.status = status }
+  public readonly data: Record<string, unknown>
+  constructor(message: string, errors: Record<string, string[]> = {}, status = 0, data: Record<string, unknown> = {}) { super(message); this.errors = errors; this.status = status; this.data = data }
   static async from(response: Response) {
     try {
       const body = await response.json() as { detail?: string, error?: string, errors?: Record<string, string[]> }
-      return new ApiError(body.detail ?? body.error ?? '', body.errors ?? {}, response.status)
+      return new ApiError(body.detail ?? body.error ?? '', body.errors ?? {}, response.status, body as Record<string, unknown>)
     } catch { return new ApiError('', {}, response.status) }
   }
 }

@@ -1,13 +1,13 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test'
+import { expect, test, type BrowserContext, type Page } from './customers-runtime.fixture'
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL
-const adminPassword = process.env.E2E_ADMIN_PASSWORD
+const adminPassword = 'E2eStable1!Password'
 if (!adminEmail || !adminPassword) throw new Error('Run Module 1 browser coverage through scripts/run-e2e.ps1.')
-async function login(page: Page, email: string, password: string) { await page.goto('/'); await page.getByLabel('E-mail').fill(email); await page.getByLabel('Senha').fill(password); const response = page.waitForResponse(r => r.url().endsWith('/api/auth/login') && r.request().method() === 'POST'); await page.getByRole('button', { name: 'Entrar' }).click(); return response }
-async function readyAdmin(page: Page) { let currentPassword = adminPassword!; let loginResult = await login(page, adminEmail!, currentPassword); if (loginResult.status() === 401) { currentPassword = 'E2eAdmin1!Password'; loginResult = await login(page, adminEmail!, currentPassword) }; expect(loginResult.status()).toBe(200); const passwordHeading = page.getByRole('heading', { name: 'Alterar senha' }); const usersHeading = page.getByRole('heading', { name: /^Usu.rios$/, level: 2 }); await Promise.race([passwordHeading.waitFor({ state: 'visible' }), usersHeading.waitFor({ state: 'visible' })]); if (await passwordHeading.isVisible()) { await page.getByLabel('Senha atual').fill(currentPassword); await page.getByLabel('Nova senha', { exact: true }).fill('E2eAdmin1!Password'); await page.getByLabel(/^Confirmar/).fill('E2eAdmin1!Password'); await page.getByRole('button', { name: 'Alterar senha' }).click() }; await expect(usersHeading).toBeVisible() }
+async function login(page: Page, email: string, password: string) { await page.goto(process.env.PLAYWRIGHT_BASE_URL!); await page.getByLabel('E-mail').fill(email); await page.getByLabel('Senha').fill(password); const response = page.waitForResponse(r => r.url().endsWith('/api/auth/login') && r.request().method() === 'POST'); await page.getByRole('button', { name: 'Entrar' }).click(); return response }
+async function readyAdmin(page: Page) { expect((await login(page, adminEmail!, adminPassword)).status()).toBe(200); await expect(page.getByRole('heading', { name: /^Usu.rios$/, level: 2 })).toBeVisible() }
 
 test('ADMIN-created USER can replace a regenerated temporary password and then use a permanent password', async ({ browser }) => {
-  const adminContext: BrowserContext = await browser.newContext(), firstUserContext: BrowserContext = await browser.newContext(), permanentUserContext: BrowserContext = await browser.newContext()
+  const adminContext: BrowserContext = await browser.newContext({ storageState: { cookies: [], origins: [] } }), firstUserContext: BrowserContext = await browser.newContext({ storageState: { cookies: [], origins: [] } }), permanentUserContext: BrowserContext = await browser.newContext({ storageState: { cookies: [], origins: [] } })
   const adminPage = await adminContext.newPage(), firstUserPage = await firstUserContext.newPage(), permanentUserPage = await permanentUserContext.newPage()
   const email = `temporary-password-validation-${Date.now()}@example.test`, permanentPassword = 'Permanent1!Password'
   await readyAdmin(adminPage); await adminPage.getByLabel('Nome completo').fill('Temporary Password Validation'); await adminPage.getByLabel('E-mail').fill(email); await adminPage.getByLabel('Perfil').selectOption('USER'); await adminPage.getByRole('button', { name: /^Criar usu.rio$/ }).click()

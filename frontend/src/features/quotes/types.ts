@@ -1,0 +1,14 @@
+export type QuoteStatus = string
+export type VisitStatus = 'Scheduled' | 'Completed' | 'Cancelled'
+export type EligibleProfessional = { id: string; fullName: string; email: string; role: string }
+export type QuoteVisit = { id: string; assignedUserId: string; assignedUserName: string; assignedUserEmail: string; scheduledStart: string; scheduledEnd: string; status: VisitStatus; customerUnitId: string | null; locationSnapshot: string | null; notes: string | null }
+export type ClientResponseType = 'Approved' | 'ChangesRequested' | 'Rejected'
+export type PaymentType = 'Cash' | 'Installments'
+export type RiskDegree = 'One' | 'Two' | 'Three' | 'Four'
+export type QuoteItem = { id: string; serviceId: string; serviceCodeSnapshot: string; serviceNameSnapshot: string; displayOrder: number }
+export type QuoteSummary = { id: string; number: string; customerId: string; customerLegalNameSnapshot: string; customerCnpjSnapshot: string; status: QuoteStatus; totalAmount: number | null; paymentType: PaymentType | null; installmentCount: number | null; createdAtUtc: string; updatedAtUtc: string; employeeCount: number | null; riskDegree: RiskDegree | null; serviceUnitId: string | null; serviceAddressSnapshot: string | null; sentForApprovalAt: string | null; validUntil: string | null; responsibleUserId: string | null; responsibleUserName: string | null; currentVisit: QuoteVisit | null }
+export type Quote = QuoteSummary & { notes: string | null; createdByUserId: string; updatedByUserId: string; version: string; items: QuoteItem[]; approvalRecipientName: string | null; approvalRecipientEmail: string | null; clientResponseAt: string | null; clientResponseType: ClientResponseType | null; clientResponseNotes: string | null; responsibleUserEmail: string | null }
+export type QuoteSummaryCounts = { draft: number; awaitingApproval: number; changesRequested: number; approved: number }
+export type QuoteHistory = { id: string; occurredAtUtc: string; action: string; actorUserId: string; notes: string | null }
+export type QuoteList = { items: QuoteSummary[]; page: number; pageSize: number; totalCount: number }
+export type QuoteInput = { customerId: string; items: { id?: string; serviceId: string }[]; totalAmount: string; paymentType: PaymentType | ''; installmentCount: string; employeeCount?: string; riskDegree?: RiskDegree | ''; serviceUnitId?: string; responsibleUserId?: string; notes: string }

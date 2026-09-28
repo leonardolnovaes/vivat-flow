@@ -1,11 +1,11 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test'
+import { expect, test, type BrowserContext, type Page } from './customers-runtime.fixture'
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL
-const adminPassword = process.env.E2E_ADMIN_PASSWORD
+const adminPassword = 'E2eStable1!Password'
 if (!adminEmail || !adminPassword) throw new Error('Run Module 1 browser coverage through scripts/run-e2e.ps1.')
 
 async function login(page: Page, email: string, password: string) {
-  await page.goto('/')
+  await page.goto(process.env.PLAYWRIGHT_BASE_URL!)
   await page.getByLabel('E-mail').fill(email)
   await page.getByLabel('Senha').fill(password)
   const response = page.waitForResponse(r => r.url().endsWith('/api/auth/login') && r.request().method() === 'POST')
@@ -13,24 +13,13 @@ async function login(page: Page, email: string, password: string) {
   return response
 }
 async function readyAdmin(page: Page) {
-  let currentPassword = adminPassword!
-  let loginResult = await login(page, adminEmail!, currentPassword)
-  if (loginResult.status() === 401) { currentPassword = 'E2eAdmin1!Password'; loginResult = await login(page, adminEmail!, currentPassword) }
+  const loginResult = await login(page, adminEmail!, adminPassword)
   expect(loginResult.status()).toBe(200)
-  const passwordHeading = page.getByRole('heading', { name: 'Alterar senha' })
-  const usersHeading = page.getByRole('heading', { name: /^Usu.rios$/, level: 2 })
-  await Promise.race([passwordHeading.waitFor({ state: 'visible' }), usersHeading.waitFor({ state: 'visible' })])
-  if (await passwordHeading.isVisible()) {
-    await page.getByLabel('Senha atual').fill(currentPassword)
-    await page.getByLabel('Nova senha', { exact: true }).fill('E2eAdmin1!Password')
-    await page.getByLabel(/^Confirmar/).fill('E2eAdmin1!Password')
-    await page.getByRole('button', { name: 'Alterar senha' }).click()
-  }
-  await expect(usersHeading).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^Usu.rios$/, level: 2 })).toBeVisible()
 }
 
 test('rejects an existing USER browser session after ADMIN deactivates that exact user', async ({ browser }) => {
-  const adminContext: BrowserContext = await browser.newContext(), userContext: BrowserContext = await browser.newContext()
+  const adminContext: BrowserContext = await browser.newContext({ storageState: { cookies: [], origins: [] } }), userContext: BrowserContext = await browser.newContext({ storageState: { cookies: [], origins: [] } })
   const adminPage = await adminContext.newPage(), userPage = await userContext.newPage()
   const email = `stale-session-validation-${Date.now()}@example.test`, userPassword = 'StaleSession1!Pass'
   await readyAdmin(adminPage)

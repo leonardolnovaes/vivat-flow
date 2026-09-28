@@ -49,7 +49,7 @@ Metadata and business context are stored in PostgreSQL. File content will use pr
 
 Audit records important changes such as user creation, customer changes, quote/status changes, assignments, uploads, and deliveries. Never include passwords, tokens, secrets, or unnecessary sensitive data.
 
-The React/TypeScript/Vite frontend is organized by product module and consumes backend APIs. xUnit tests backend behavior; Playwright covers end-to-end workflows, especially the acceptance scenario and delivery-pending visibility.
+The React/TypeScript/Vite frontend is organized by product module and consumes backend APIs. xUnit tests are classified with `Category=Unit` or `Category=Integration`; the normal AI validation executes only unit tests. Playwright covers end-to-end workflows, especially the acceptance scenario and delivery-pending visibility, and is executed manually or by CI/CD.
 
 All source code and technical artifacts use English identifiers and names, including database objects, APIs where reasonable, tests, comments, filenames, logs, and developer documentation. User-facing application content is Portuguese (Brazil); UI organization should permit clean future localization.
 

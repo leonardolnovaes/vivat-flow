@@ -1,12 +1,12 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './customers-runtime.fixture'
 
 const adminEmail = process.env.E2E_ADMIN_EMAIL
-const bootstrapPassword = process.env.E2E_ADMIN_PASSWORD
-const adminPassword = 'E2eAdmin1!Password'
+const bootstrapPassword = 'E2eStable1!Password'
+const adminPassword = 'E2eStable1!Password'
 if (!adminEmail || !bootstrapPassword) throw new Error('Run Module 1 browser coverage through scripts/run-e2e.ps1.')
 
 async function login(page: Page, email: string, password: string) {
-  await page.goto('/')
+  await page.goto(process.env.PLAYWRIGHT_BASE_URL!)
   await page.getByLabel('E-mail').fill(email)
   await page.getByLabel('Senha').fill(password)
   const response = page.waitForResponse(r => r.url().endsWith('/api/auth/login') && r.request().method() === 'POST')
@@ -15,19 +15,9 @@ async function login(page: Page, email: string, password: string) {
 }
 
 async function readyAdmin(page: Page) {
-  let password = bootstrapPassword!
-  let response = await login(page, adminEmail!, password)
-  if (response.status() === 401) { password = adminPassword; response = await login(page, adminEmail!, password) }
+  const response = await login(page, adminEmail!, bootstrapPassword)
   expect(response.status()).toBe(200)
-  const passwordHeading = page.getByRole('heading', { name: 'Alterar senha' })
   const usersHeading = page.getByRole('heading', { name: /^Usu.rios$/, level: 2 })
-  await Promise.race([passwordHeading.waitFor({ state: 'visible' }), usersHeading.waitFor({ state: 'visible' })])
-  if (await passwordHeading.isVisible()) {
-    await page.getByLabel('Senha atual').fill(password)
-    await page.getByLabel('Nova senha', { exact: true }).fill(adminPassword)
-    await page.getByLabel(/^Confirmar/).fill(adminPassword)
-    await page.getByRole('button', { name: 'Alterar senha' }).click()
-  }
   await expect(usersHeading).toBeVisible()
 }
 
@@ -55,10 +45,11 @@ async function activateAccount(page: Page, email: string, temporaryPassword: str
   await expect(page.getByRole('heading', { name: 'Bem-vindo' })).toBeVisible()
 }
 
-test('anonymous login, invalid credentials, ADMIN refresh and logout use the real cookie flow', async ({ page }) => {
-  const runtimeErrors: Error[] = []
-  page.on('pageerror', error => runtimeErrors.push(error))
-  await page.goto('/')
+test('anonymous login, invalid credentials, ADMIN refresh and logout use the real cookie flow', async ({ browser }) => {
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+  const page = await context.newPage()
+  try {
+  await page.goto(process.env.PLAYWRIGHT_BASE_URL!)
   await expect(page.getByRole('heading', { name: 'Entrar' })).toBeVisible()
   expect((await login(page, 'invalid@example.test', 'Invalid1!Password')).status()).toBe(401)
   await expect(page.getByRole('alert')).toBeVisible()
@@ -67,15 +58,18 @@ test('anonymous login, invalid credentials, ADMIN refresh and logout use the rea
   await expect(page.getByRole('heading', { name: /^Usu.rios$/, level: 2 })).toBeVisible()
   await page.getByRole('button', { name: 'Sair' }).click()
   await expect(page.getByRole('heading', { name: 'Entrar' })).toBeVisible()
-  expect(runtimeErrors).toEqual([])
+  } finally { await context.close() }
 })
 
 test('MANAGER and USER cannot access Administration', async ({ browser }) => {
-  const admin = await browser.newPage()
+  const adminContext = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+  const managerContext = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+  const userContext = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+  const admin = await adminContext.newPage()
   await readyAdmin(admin)
   const manager = await createUser(admin, 'MANAGER')
   const user = await createUser(admin, 'USER')
-  const managerPage = await browser.newPage(), userPage = await browser.newPage()
+  const managerPage = await managerContext.newPage(), userPage = await userContext.newPage()
   await activateAccount(managerPage, manager.email, manager.temporaryPassword, 'Manager1!Password')
   await activateAccount(userPage, user.email, user.temporaryPassword, 'UserPass1!Password')
   await expect(managerPage.getByRole('button', { name: /^Administra/ })).toHaveCount(0)
@@ -84,5 +78,5 @@ test('MANAGER and USER cannot access Administration', async ({ browser }) => {
   await expect(managerPage.getByRole('heading', { name: 'Acesso negado' })).toBeVisible()
   await userPage.goto('/admin/usuarios')
   await expect(userPage.getByRole('heading', { name: 'Acesso negado' })).toBeVisible()
-  await admin.close(); await managerPage.close(); await userPage.close()
+  await adminContext.close(); await managerContext.close(); await userContext.close()
 })

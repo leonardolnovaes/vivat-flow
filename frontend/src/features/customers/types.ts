@@ -1,5 +1,5 @@
 export type CustomerSummary = {
-  id: string; legalName: string; tradeName: string | null; cnpj: string; isActive: boolean
+  id: string; legalName: string; tradeName: string | null; cnpj: string; isActive: boolean; isComplete: boolean; missingRequiredFields: string[]
   createdAtUtc: string; updatedAtUtc: string
 }
 

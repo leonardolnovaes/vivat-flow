@@ -14,7 +14,7 @@ From the repository root in PowerShell:
 
 ```powershell
 .\scripts\restore.ps1  # Only on first setup or after dependency changes.
-.\scripts\validate.ps1 # Normal build, tests, lint, and production build.
+.\scripts\validate.ps1 # Normal build, unit tests, lint, and production build.
 .\scripts\start-local.ps1 -BackendOnly
 ```
 
@@ -57,7 +57,7 @@ The app applies its Identity migration at startup. The configured administrator 
 
 Authentication endpoints are `GET /api/auth/csrf`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/change-password`, and `POST /api/auth/logout`; there is no public registration endpoint. The frontend fetches `/api/auth/csrf` before every state-changing request and sends its `token` response in `X-CSRF-TOKEN`, while retaining `credentials: 'include'` for the HttpOnly cookie.
 
-Identity integration tests run with a relational SQLite database only under the `Testing` environment, covering cookies, antiforgery, bootstrap, and password changes without claiming PostgreSQL-specific behavior. PostgreSQL migration validation requires Docker Desktop or another reachable PostgreSQL instance.
+Identity integration tests run with a relational SQLite database only under the `Testing` environment, covering cookies, antiforgery, bootstrap, and password changes without claiming PostgreSQL-specific behavior. PostgreSQL migration validation requires Docker Desktop or another reachable PostgreSQL instance. The default AI validation excludes both categories: it runs only xUnit tests tagged `Category=Unit`.
 
 User administration is available to `ADMIN` only at `/api/admin/users`. Bootstrap configuration also requires `BootstrapAdmin__FullName`.
 
@@ -85,7 +85,18 @@ Set-Location ..
 .\scripts\start-local.ps1 -FrontendOnly
 ```
 
-`scripts\validate.ps1` runs both the frontend production build and lint check.
+`scripts\validate.ps1` runs the backend Release build, only xUnit tests tagged `Category=Unit`, and the frontend production build and lint check. It deliberately excludes integration, PostgreSQL, Playwright/E2E, smoke, regression, and performance suites.
+
+### Non-unit test execution
+
+Non-unit suites are not run automatically by the AI, including after those tests are created or changed. Run them manually or in CI/CD. For example:
+
+```powershell
+.\backend\tests\validate-module1-postgres.ps1
+.\scripts\run-e2e.ps1
+```
+
+When changing a non-unit suite, record what it covers, its manual command, and that it was not executed.
 
 ### Module 1 stale-session browser validation
 
@@ -111,6 +122,28 @@ Run the permanent Customers browser suite only through the isolated runner:
 It starts a uniquely named, disposable PostgreSQL container on port `55435` by default, applies migrations from zero, generates an in-memory bootstrap ADMIN credential, runs an isolated API on `57228` and Vite proxy on `5174`, then removes all three processes and the container. It does not read `.env`, reuse `5432`, print credentials, or issue any database cleanup command. Override ports only with unused values. The suite bootstraps MANAGER and USER through the real ADMIN UI and completes their mandatory password changes.
 
 Each run starts from a known state and carries a unique run identifier; records created by the suite use names such as `E2E-{runId}-Customer`.
+
+### Fast E2E development loop
+
+For fast local feedback, provision one isolated E2E environment and keep it after a focused test run:
+
+```powershell
+.\scripts\run-e2e.ps1 -KeepEnvironment -PlaywrightArgs 'module1-authentication.spec.ts'
+```
+
+Rerun an affected spec against that same verified E2E database, API, frontend, and authenticated test state without rebuilding or reprovisioning:
+
+```powershell
+.\scripts\run-e2e.ps1 -ReuseEnvironment -PlaywrightArgs 'module1-authentication.spec.ts'
+```
+
+When finished, remove only the recorded E2E-owned processes and PostgreSQL container:
+
+```powershell
+.\scripts\run-e2e.ps1 -Cleanup
+```
+
+Reuse verifies recorded process ownership, container labels, database identity, health endpoints, and a production-source fingerprint before each run. It fails closed if the environment is stale or production source has changed; clean it and provision again in that case. Playwright test-source changes can be rerun against the reusable environment. The default command, `./scripts/run-e2e.ps1`, remains the clean isolated acceptance command for manual or CI execution and always provisions and cleans up its own environment.
 
 Any future cleanup tool is limited to Development or Test, verifies the target database/environment identity before it changes data, and deletes only records that carry the current clearly identifiable E2E run prefix. It must fail closed when that verification is unavailable. The domain model must not add an `IsTestData` field for this purpose.
 

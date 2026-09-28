@@ -4,6 +4,7 @@ using Tsdt.Api.Identity;
 
 namespace Tsdt.Tests.Identity;
 
+[Trait("Category", "Integration")]
 public sealed class BootstrapAdminTests
 {
     [Fact]

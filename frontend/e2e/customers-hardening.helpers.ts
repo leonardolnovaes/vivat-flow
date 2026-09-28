@@ -14,8 +14,9 @@ const adminPassword = process.env.E2E_ADMIN_PASSWORD
 if (!adminEmail || !adminPassword) throw new Error('Run Customers browser coverage through scripts/run-e2e.ps1.')
 
 let sequence = 0
-export const unique = () => `${Date.now()}-${process.pid}-${++sequence}`
-export const freshSeed = () => Math.floor(Math.random() * 899_999_999_999) + 100_000_000_000
+const runId = process.env.E2E_RUN_ID ?? 'local'
+export const unique = () => `${runId}-${process.pid}-${++sequence}`
+export const freshSeed = () => 100_000_000_000 + (process.pid * 1_000_000) + ++sequence
 export function cnpj(seed: number) {
   const root = `${seed}`.padStart(12, '0')
   const digit = (source: string, weights: number[]) => {
@@ -38,26 +39,7 @@ export const unitInput = (changes: Record<string, unknown> = {}) => ({
 
 export async function readyAdmin(page: Page) {
   await page.goto('/')
-  await page.getByLabel('E-mail').fill(adminEmail!)
-  await page.getByLabel('Senha').fill(adminPassword!)
-  const loginResponse = page.waitForResponse(response => response.url().endsWith('/api/auth/login') && response.request().method() === 'POST')
-  await page.getByRole('button', { name: 'Entrar' }).click()
-  if ((await loginResponse).status() === 401) {
-    await page.getByLabel('Senha').fill('E2eAdmin1!Password')
-    const retryResponse = page.waitForResponse(response => response.url().endsWith('/api/auth/login') && response.request().method() === 'POST')
-    await page.getByRole('button', { name: 'Entrar' }).click()
-    expect((await retryResponse).status()).toBe(200)
-  }
-  const passwordHeading = page.getByRole('heading', { name: 'Alterar senha' })
-  const administration = page.getByRole('button', { name: /^Administra/ })
-  await Promise.race([passwordHeading.waitFor({ state: 'visible' }), administration.waitFor({ state: 'visible' })])
-  if (await passwordHeading.isVisible()) {
-    await page.getByLabel('Senha atual').fill(adminPassword!)
-    await page.getByLabel('Nova senha', { exact: true }).fill('E2eAdmin1!Password')
-    await page.getByLabel('Confirmar nova senha').fill('E2eAdmin1!Password')
-    await page.getByRole('button', { name: 'Alterar senha' }).click()
-    await expect(administration).toBeVisible()
-  }
+  await expect(page.getByRole('button', { name: /^Administra/ })).toBeVisible()
 }
 
 export async function api<T = unknown>(page: Page, method: string, path: string, body?: unknown, csrf: 'valid' | 'missing' | 'invalid' = 'valid'): Promise<ApiResult<T>> {

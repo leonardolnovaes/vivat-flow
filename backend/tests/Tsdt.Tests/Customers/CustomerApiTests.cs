@@ -9,6 +9,7 @@ using Tsdt.Tests.Identity;
 
 namespace Tsdt.Tests.Customers;
 
+[Trait("Category", "Integration")]
 public sealed class CustomerApiTests
 {
     [Fact]

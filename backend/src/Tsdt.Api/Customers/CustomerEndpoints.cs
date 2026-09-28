@@ -70,8 +70,9 @@ public static partial class CustomerEndpoints
         var total = await query.CountAsync();
         var offset = ((long)requestedPage - 1) * requestedPageSize;
         if (offset > int.MaxValue) return Results.Ok(new CustomerListResponse([], requestedPage, requestedPageSize, total));
-        var items = await query.Skip((int)offset).Take(requestedPageSize)
-            .Select(customer => new CustomerSummaryResponse(customer.Id, customer.LegalName, customer.TradeName, customer.Cnpj, customer.IsActive, customer.CreatedAtUtc, customer.UpdatedAtUtc)).ToListAsync();
+        var customers = await query.Skip((int)offset).Take(requestedPageSize)
+            .Include(customer => customer.Contacts).Include(customer => customer.Units).ToListAsync();
+        var items = customers.Select(ToSummary).ToList();
         return Results.Ok(new CustomerListResponse(items, requestedPage, requestedPageSize, total));
     }
 
@@ -88,7 +89,8 @@ public static partial class CustomerEndpoints
         if (!await ValidateAntiforgeryAsync(context, antiforgery)) return CsrfFailure();
         var input = ValidateCustomer(request.LegalName, request.TradeName, request.Cnpj, request.Notes);
         if (input.Errors is not null) return Results.ValidationProblem(input.Errors);
-        if (await db.Customers.AnyAsync(customer => customer.Cnpj == input.Cnpj)) return DuplicateCnpj();
+        var existing = await db.Customers.Include(customer => customer.Contacts).Include(customer => customer.Units).SingleOrDefaultAsync(customer => customer.Cnpj == input.Cnpj);
+        if (existing is not null) return DuplicateCnpj(existing);
         var now = DateTimeOffset.UtcNow;
         var actor = GetActor(context);
         var customer = new Customer { Id = Guid.NewGuid(), LegalName = input.LegalName!, TradeName = input.TradeName, Cnpj = input.Cnpj!, Notes = input.Notes, IsActive = true, CreatedAtUtc = now, UpdatedAtUtc = now, CreatedByUserId = actor, UpdatedByUserId = actor, Version = Guid.NewGuid() };
@@ -105,7 +107,11 @@ public static partial class CustomerEndpoints
         var customer = await db.Customers.Include(customer => customer.Contacts).Include(customer => customer.Units).SingleOrDefaultAsync(customer => customer.Id == id);
         if (customer is null) return Results.NotFound();
         if (customer.Version != request.ExpectedVersion) return Stale();
-        if (customer.Cnpj != input.Cnpj && await db.Customers.AnyAsync(other => other.Id != id && other.Cnpj == input.Cnpj)) return DuplicateCnpj();
+        if (customer.Cnpj != input.Cnpj)
+        {
+            var existing = await db.Customers.Include(other => other.Contacts).Include(other => other.Units).SingleOrDefaultAsync(other => other.Id != id && other.Cnpj == input.Cnpj);
+            if (existing is not null) return DuplicateCnpj(existing);
+        }
         customer.LegalName = input.LegalName!; customer.TradeName = input.TradeName; customer.Cnpj = input.Cnpj!; customer.Notes = input.Notes;
         Touch(customer, GetActor(context));
         AddAudit(db, id, customer.UpdatedByUserId, "CUSTOMER_UPDATED", "LegalName,TradeName,Cnpj,Notes");
@@ -242,7 +248,7 @@ public static partial class CustomerEndpoints
     }
 
     private static bool IsUniqueViolation(DbUpdateException exception, string constraint) => exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: var name } && name == constraint;
-    private static IResult DuplicateCnpj() => Results.Conflict(new { errors = new Dictionary<string, string[]> { ["cnpj"] = ["Já existe um cliente com este CNPJ."] } });
+    private static IResult DuplicateCnpj(Customer? existing = null) => Results.Conflict(new { errors = new Dictionary<string, string[]> { ["cnpj"] = ["Já existe um cliente com este CNPJ."] }, existingCustomer = existing is null ? null : ToSummary(existing) });
     private static IResult PrimaryContactConflict() => Results.Conflict(new { errors = new Dictionary<string, string[]> { ["isPrimary"] = [PrimaryContactMessage] } });
     private static IResult PrimaryUnitConflict() => Results.Conflict(new { errors = new Dictionary<string, string[]> { ["isPrimary"] = [PrimaryUnitMessage] } });
     private static IResult Stale() => Results.Conflict(new { error = StaleMessage });
@@ -253,7 +259,23 @@ public static partial class CustomerEndpoints
     private static void Touch(Customer customer, string actor) { customer.UpdatedAtUtc = DateTimeOffset.UtcNow; customer.UpdatedByUserId = actor; customer.Version = Guid.NewGuid(); }
     private static Task<bool> HasPrimaryContactAsync(ApplicationDbContext db, Guid customerId, Guid? exceptId) => db.CustomerContacts.AnyAsync(contact => contact.CustomerId == customerId && contact.IsActive && contact.IsPrimary && (!exceptId.HasValue || contact.Id != exceptId));
     private static Task<bool> HasPrimaryUnitAsync(ApplicationDbContext db, Guid customerId, Guid? exceptId) => db.CustomerUnits.AnyAsync(unit => unit.CustomerId == customerId && unit.IsActive && unit.IsPrimary && (!exceptId.HasValue || unit.Id != exceptId));
-    private static CustomerDetailResponse ToDetail(Customer customer) => new(customer.Id, customer.LegalName, customer.TradeName, customer.Cnpj, customer.Notes, customer.IsActive, customer.CreatedAtUtc, customer.UpdatedAtUtc, customer.CreatedByUserId, customer.UpdatedByUserId, customer.Version, customer.Contacts.OrderBy(contact => contact.Name).Select(ToResponse).ToList(), customer.Units.OrderBy(unit => unit.Name).Select(ToResponse).ToList());
+    private static CustomerSummaryResponse ToSummary(Customer customer)
+    {
+        var completion = Completion(customer);
+        return new(customer.Id, customer.LegalName, customer.TradeName, customer.Cnpj, customer.IsActive, completion.IsComplete, completion.MissingFields, customer.CreatedAtUtc, customer.UpdatedAtUtc);
+    }
+    private static CustomerDetailResponse ToDetail(Customer customer)
+    {
+        var completion = Completion(customer);
+        return new(customer.Id, customer.LegalName, customer.TradeName, customer.Cnpj, customer.Notes, customer.IsActive, completion.IsComplete, completion.MissingFields, customer.CreatedAtUtc, customer.UpdatedAtUtc, customer.CreatedByUserId, customer.UpdatedByUserId, customer.Version, customer.Contacts.OrderBy(contact => contact.Name).Select(ToResponse).ToList(), customer.Units.OrderBy(unit => unit.Name).Select(ToResponse).ToList());
+    }
+    private static CustomerCompletion Completion(Customer customer)
+    {
+        var missing = new List<string>();
+        if (!customer.Contacts.Any(contact => contact.IsActive)) missing.Add("contact");
+        if (!customer.Units.Any(unit => unit.IsActive)) missing.Add("unit");
+        return new CustomerCompletion(missing.Count == 0, missing);
+    }
     private static CustomerContactResponse ToResponse(CustomerContact contact) => new(contact.Id, contact.CustomerId, contact.Name, contact.RoleOrDepartment, contact.Email, contact.Phone, contact.IsPrimary, contact.IsActive, contact.CreatedAtUtc, contact.UpdatedAtUtc);
     private static CustomerUnitResponse ToResponse(CustomerUnit unit) => new(unit.Id, unit.CustomerId, unit.Name, unit.Street, unit.Number, unit.Complement, unit.District, unit.City, unit.StateCode, unit.PostalCode, unit.IsPrimary, unit.IsActive, unit.CreatedAtUtc, unit.UpdatedAtUtc);
 
@@ -308,4 +330,5 @@ public static partial class CustomerEndpoints
     private sealed record CustomerInput(string? LegalName, string? TradeName, string? Cnpj, string? Notes, Dictionary<string, string[]>? Errors);
     private sealed record ContactInput(string? Name, string? RoleOrDepartment, string? Email, string? Phone, Dictionary<string, string[]>? Errors);
     private sealed record UnitInput(string? Name, string? Street, string? Number, string? Complement, string? District, string? City, string? StateCode, string? PostalCode, Dictionary<string, string[]>? Errors);
+    private sealed record CustomerCompletion(bool IsComplete, IReadOnlyList<string> MissingFields);
 }

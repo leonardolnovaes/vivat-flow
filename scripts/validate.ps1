@@ -11,7 +11,7 @@ $solution = Join-Path $root 'backend\Tsdt.sln'
 $frontend = Join-Path $root 'frontend'
 $steps = [ordered]@{
     'Backend Release build' = 'pending'
-    'Backend tests' = 'pending'
+    'Backend unit tests' = 'pending'
     'Frontend lint' = 'pending'
     'Frontend production build' = 'pending'
 }
@@ -28,7 +28,7 @@ function Invoke-Step([string]$Name, [scriptblock]$Action) {
         $steps[$Name] = 'FAIL'
         $hint = switch ($Name) {
             'Backend Release build' { ' If the dependency graph changed, run .\scripts\restore.ps1 once.' }
-            'Backend tests' { ' Inspect the test failure above; do not skip tests.' }
+            'Backend unit tests' { ' Inspect the unit-test failure above; do not skip unit tests.' }
             'Frontend lint' { ' Fix the reported lint diagnostics.' }
             'Frontend production build' { ' Fix the reported TypeScript or Vite diagnostics.' }
         }
@@ -54,8 +54,8 @@ try {
     Invoke-Step 'Backend Release build' {
         & dotnet build $solution --configuration Release --no-restore $validationOutput
     }
-    Invoke-Step 'Backend tests' {
-        & dotnet test $solution --configuration Release --no-build --no-restore $validationOutput
+    Invoke-Step 'Backend unit tests' {
+        & dotnet test $solution --configuration Release --no-build --no-restore $validationOutput --filter 'Category=Unit'
     }
     Push-Location $frontend
     try {

@@ -10,6 +10,83 @@
 - Explain important architecture changes before implementing them.
 - When code exists, run relevant tests.
 - Do not commit unless explicitly requested.
+- All new frontend screens and meaningful frontend changes must follow `docs/FRONTEND_STANDARDS.md`; UI work is not complete until its running-screen visual/manual QA gate passes.
+
+## Reuse-first engineering
+
+TSDT ERP is the repository source of truth and the reference implementation for future projects. Build clean, reusable technical patterns with minimal business coupling, but do not prematurely create a generic framework or separate shared library.
+
+- Before creating code, inspect the repository and identify the closest reference implementation.
+- Reuse or extend established components, helpers, services, UI patterns, validation, API and authorization conventions, tests, infrastructure, scripts, and documentation whenever appropriate; do not introduce a parallel implementation for behavior already solved elsewhere.
+- Decision order: reuse an existing implementation directly; evolve it with a small extension; extract a reusable abstraction only when duplication already exists or the pattern will clearly be reused; otherwise create a new implementation consistent with repository standards.
+- Do not copy-paste repeated behavior across feature files. Prefer shared technical primitives with clear ownership, while keeping feature-specific domain configuration within its module.
+- When a shared implementation is insufficient, understand its consumers, improve the shared foundation safely, preserve compatibility when appropriate, migrate affected consumers, and validate regressions.
+- For every substantial development task, before coding, identify the reference implementation, what will be reused unchanged, what will be extended, and what genuinely must be created. State explicitly when repository inspection finds no suitable pattern.
+- During review and in the final report, explicitly state what existing code was reused, what was extended, and what genuinely had to be created. Check for avoidable duplication in components, helpers, validation, styles, API/error handling, authorization, and test setup.
+- For frontend work, also follow `docs/FRONTEND_STANDARDS.md`.
+
+## Execution and validation discipline
+
+- During normal AI-assisted development, automatically execute only unit tests. Static checks, compilation/build, and linting remain part of normal validation.
+- The AI may create, modify, refactor, and review E2E, integration, smoke, regression, performance, and other non-unit tests, but must not execute them automatically. Creating or changing such a test does not grant execution permission.
+- Non-unit suites are run separately by a developer/team or dedicated CI/CD pipeline. When the AI changes a non-unit test, report its coverage, the manual command to run it, and explicitly that it was not executed.
+- Classify backend tests with xUnit `Trait("Category", "Unit")` or `Trait("Category", "Integration")`. Tests without a `Unit` category are excluded from the AI's default validation command.
+- Before editing, inspect only the files needed to resolve the task, reuse established repository patterns, and identify the exact files expected to change.
+- Do not perform open-ended repository hardening, opportunistic refactoring, or unrelated improvements. Report out-of-scope findings instead.
+- During implementation, use the smallest permitted validation that proves the current change. Do not run non-unit suites automatically.
+- Prefer a single blocking command with an appropriate timeout over polling a running process. When a command already blocks until completion, wait for its result; do not poll logs or process state with `Start-Sleep`, `Get-Content`, `Get-Process`, or repeated status commands. Inspect logs only after completion or when investigating a genuine timeout or failure.
+- When validation fails, diagnose the specific failure before rerunning it. Do not rerun an unchanged failing command unless the failure is known to be transient, and do not escalate a targeted failure to repository-wide testing without cause.
+- Run the canonical `./scripts/validate.ps1` validation once after implementation is stable. It runs only unit tests, build, and lint. PostgreSQL and Playwright validation are manual/CI responsibilities unless the user explicitly directs their execution.
+- Stop once the requested implementation and required acceptance gates pass. Report optional findings or remaining risks without beginning another review, hardening, cleanup, optimization, or validation cycle.
+
+### Cost-aware validation / fast feedback
+
+The default AI validation proceeds through permitted checks only:
+
+cheap/static checks -> targeted unit tests -> canonical validation once.
+
+#### 1. Static/preflight first
+
+Before running builds or unit tests:
+
+- Inspect only the changed/relevant files.
+- Run targeted `rg`/static checks when useful.
+- For changed non-unit tests, review locator uniqueness, labels, async/loading states, and obvious assertions statically before handing them off.
+
+Do not launch an expensive test runner to discover basic spelling, locator, or selector problems that can be found statically.
+
+#### 2. Canonical validation is a gate, not a development loop
+
+The canonical repository validation is `./scripts/validate.ps1`.
+
+Use targeted checks during implementation. Run the canonical validation when the implementation is believed complete. Do not repeatedly execute `validate.ps1` between small edits.
+
+#### 3. After canonical validation passes
+
+If `validate.ps1` has already passed and subsequent changes affect only non-unit test files, selectors, assertions, test synchronization, or test-only helpers, do not rerun it. Report the affected manual/CI command instead.
+
+If production frontend code changes, run the minimum relevant frontend lint/build check. If backend production code or contracts change, run the relevant backend tests before the final canonical gate.
+
+#### 4. Batch fixes
+
+After any failed automated test:
+
+- Inspect the complete error output first.
+- Distinguish application, test, and environment defects.
+- Identify related issues.
+- Apply the complete reasonable correction.
+- Only then rerun the minimum affected scope.
+
+#### 5. Execution accounting
+
+Engineering summaries for substantial changes must report:
+
+- Canonical validation execution count.
+- Unit-test execution count.
+- Non-unit test execution count (normally zero; if non-zero, record the user's explicit authorization).
+- Retries and their cause.
+
+This allows the project to identify validation waste.
 
 ## Development environment
 

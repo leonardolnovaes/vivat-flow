@@ -7,7 +7,9 @@ $runId = "ambiguous$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
 $directory = Join-Path $root ".local\e2e\$runId"
 New-Item -ItemType Directory -Force $directory | Out-Null
 $marker = Join-Path $directory 'candidate.log'
-$candidate = Start-Process -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList @('/d', '/c', "ping 127.0.0.1 -n 20 > `"$marker`"") -PassThru -WindowStyle Hidden
+# The disposable infrastructure cycle can take more than 20 seconds on a cold
+# machine. Keep this candidate alive until the guard assertion has run.
+$candidate = Start-Process -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList @('/d', '/c', "ping 127.0.0.1 -n 121 > `"$marker`"") -PassThru -WindowStyle Hidden
 try {
     Start-Sleep -Milliseconds 200
     $manifest = [ordered]@{ SchemaVersion = 2; RunId = $runId; Lifecycle = 'running'; RunnerPid = 999999; RunnerStartedAtUtc = '2000-01-01T00:00:00.0000000Z'; ContainerName = "tsdt-e2e-postgres-$runId"; Resources = @{ candidate = @{ Pid = $candidate.Id; StartedAtUtc = '2000-01-01T00:00:00.0000000Z'; Executable = 'cmd.exe'; Command = "marker=$directory" } } }

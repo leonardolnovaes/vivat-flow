@@ -3,9 +3,12 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
 using Tsdt.Api.Audit;
 using Tsdt.Api.Customers;
 using Tsdt.Api.Identity;
+using Tsdt.Api.Services;
+using Tsdt.Api.Quotes;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -15,6 +18,7 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
     ?? (builder.Environment.IsEnvironment("Testing") ? "Host=localhost;Database=testing" : throw new InvalidOperationException("ConnectionStrings:DefaultConnection must be configured."));
 var frontendOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 if (builder.Environment.IsEnvironment("Testing"))
 {
     builder.Services.AddDataProtection().UseEphemeralDataProtectionProvider();
@@ -54,7 +58,10 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
     options.Cookie.SameSite = localFrontendSameSite;
 });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AuthorizationPolicies.CommercialAdmin, policy => policy.RequireRole(IdentityRoles.Admin));
+});
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
 {
     if (frontendOrigins.Length > 0) policy.WithOrigins(frontendOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
@@ -89,6 +96,7 @@ app.Use(async (context, next) =>
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
+
     }
 
     await next();
@@ -297,6 +305,8 @@ adminUsers.MapPost("/{id}/reset-password", async (string id, HttpContext context
 });
 
 app.MapCustomerEndpoints();
+app.MapServiceEndpoints();
+app.MapQuoteEndpoints();
 
 using (var scope = app.Services.CreateScope())
 {

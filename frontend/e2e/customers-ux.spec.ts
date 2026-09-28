@@ -58,15 +58,17 @@ test('Mobile Customers navigation, records, forms and dialogs remain usable at 4
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
 })
 
-test('List network failure and detail server error show recoverable Portuguese states', async ({ page }) => {
+test('List network failure and detail server error show recoverable Portuguese states', async ({ page, runtimeMonitor }) => {
   await readyAdmin(page)
   const customer = await createCustomer(page, freshSeed())
+  runtimeMonitor.allowNetworkFailure('/api/customers?')
   await page.route('**/api/customers?*', route => route.abort('failed'))
   await page.goto('/clientes')
   await expect(page.getByRole('alert')).toContainText(/não foi possível|indisponível/i)
   await page.unroute('**/api/customers?*')
   await page.getByRole('button', { name: 'Tentar novamente' }).click()
   await expect(page.getByRole('heading', { name: 'Clientes' })).toBeVisible()
+  runtimeMonitor.allowServerError(`/api/customers/${customer.id}`)
   await page.route(`**/api/customers/${customer.id}`, route => route.fulfill({ status: 500, contentType: 'text/plain', body: 'RAW_SECRET_EXCEPTION' }))
   await page.goto(`/clientes/${customer.id}`)
   await expect(page.getByRole('heading', { name: 'Cliente indisponível' })).toBeVisible()
@@ -77,11 +79,12 @@ test('List network failure and detail server error show recoverable Portuguese s
   await expect(page.getByRole('heading', { name: customer.legalName })).toBeVisible()
 })
 
-test('Customer create server failure preserves form values and hides raw response', async ({ page }) => {
+test('Customer create server failure preserves form values and hides raw response', async ({ page, runtimeMonitor }) => {
   await readyAdmin(page)
   await page.goto('/clientes/novo')
   await page.getByLabel('Razão social *').fill('E2E Recovery Form')
   await page.getByLabel('CNPJ *').fill(cnpj(freshSeed()))
+  runtimeMonitor.allowServerError('/api/customers')
   await page.route('**/api/customers', route => {
     if (route.request().method() === 'POST') return route.fulfill({ status: 500, contentType: 'text/plain', body: 'RAW_SERVER_TRACE' })
     return route.continue()
@@ -95,14 +98,15 @@ test('Customer create server failure preserves form values and hides raw respons
   await expect(page.getByRole('heading', { name: 'E2E Recovery Form' })).toBeVisible()
 })
 
-test('List 500, detail 404, update 500 and mutation 403 show recoverable states', async ({ page }) => {
+test('List 500, detail 404, update 500 and mutation 403 show recoverable states', async ({ page, runtimeMonitor }) => {
   await readyAdmin(page)
   const customer = await createCustomer(page, freshSeed())
+  runtimeMonitor.allowServerError('/api/customers?')
   await page.route('**/api/customers?*', route => route.fulfill({ status: 500, body: 'RAW_SERVER_TRACE' }))
   await page.goto('/clientes')
   await expect(page.getByRole('alert')).toContainText('O serviço está indisponível')
   await expect(page.getByText('RAW_SERVER_TRACE')).toHaveCount(0)
-  await expect(page.getByText('Carregando clientes...')).toHaveCount(0)
+  await expect(page.getByRole('status', { name: 'Carregando...' })).toHaveCount(0)
   await page.unroute('**/api/customers?*')
   await page.getByRole('button', { name: 'Tentar novamente' }).click()
   await expect(page.getByRole('alert')).toHaveCount(0)
@@ -111,11 +115,12 @@ test('List 500, detail 404, update 500 and mutation 403 show recoverable states'
   await page.goto(`/clientes/${customer.id}`)
   await expect(page.getByRole('heading', { name: 'Cliente indisponível' })).toBeVisible()
   await expect(page.getByRole('alert')).toContainText('não foi encontrado')
-  await expect(page.getByText('Carregando cliente...')).toHaveCount(0)
+  await expect(page.getByRole('status', { name: 'Carregando...' })).toHaveCount(0)
   await page.unroute(`**/api/customers/${customer.id}`)
 
   await page.goto(`/clientes/${customer.id}/editar`)
   await page.getByLabel('Nome fantasia').fill('E2E Unsaved Update')
+  runtimeMonitor.allowServerError(`/api/customers/${customer.id}`)
   await page.route(`**/api/customers/${customer.id}`, route => route.request().method() === 'PUT'
     ? route.fulfill({ status: 500, body: 'RAW_SERVER_TRACE' }) : route.continue())
   await page.getByRole('button', { name: 'Salvar alterações' }).click()

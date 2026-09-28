@@ -5,13 +5,13 @@ test('Search, filters, sorting and pagination use stable bounded results', async
   await readyAdmin(page)
   const marker = `E2E Query ${unique()}`
   const created: { id: string; legalName: string; tradeName: string | null }[] = []
-  for (let index = 0; index < 27; index++) {
+  await Promise.all(Array.from({ length: 27 }, async (_, index) => {
     const customer = await createCustomer(page, freshSeed(), {
       legalName: `${marker} ${String(index).padStart(2, '0')}`,
       tradeName: `${marker} Trade ${String(26 - index).padStart(2, '0')}`
     })
-    created.push(customer)
-  }
+    created[index] = customer
+  }))
   const first = created[0]
   const contactEmail = `query-${unique()}@example.test`
   const contact = await api(page, 'POST', `/api/customers/${first.id}/contacts`, {
