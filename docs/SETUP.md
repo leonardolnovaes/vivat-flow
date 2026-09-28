@@ -92,6 +92,7 @@ Set-Location ..
 Non-unit suites are not run automatically by the AI, including after those tests are created or changed. Run them manually or in CI/CD. For example:
 
 ```powershell
+dotnet test .\backend\Tsdt.sln --configuration Release --filter 'Category=Integration'
 .\backend\tests\validate-module1-postgres.ps1
 .\scripts\run-e2e.ps1
 ```
