@@ -8,7 +8,7 @@ import type { Service, ServiceInput, ServiceList } from './types'
 type User = { roles: string[] }
 type Props = { path: string; user: User; go: (path: string, replace?: boolean) => void; onSessionExpired: () => void }
 type Errors = Record<string, string[]>
-const blank: ServiceInput = { code: '', name: '', description: '', basePrice: '' }
+const blank: ServiceInput = { code: '', name: '', description: '', basePrice: '', serviceLineId: '' }
 const canMutate = (user: User) => user.roles.some(role => role === 'ADMIN' || role === 'MANAGER')
 
 export function ServicesRoutes(props: Props) {

@@ -18,25 +18,34 @@ From the repository root in PowerShell:
 .\scripts\start-local.ps1 -BackendOnly
 ```
 
-### Safe local startup and restart
+### Permanent DEMO / DEV boundary
 
-The canonical local ports are frontend `5173`, backend HTTPS `7226`, and PostgreSQL `5432`. They are fixed rather than dynamically selected. Always use `scripts\start-local.ps1` to start the local API and frontend. It checks ports 7226 and 5173, inspects the listening command to confirm it belongs to TSDT, calls `/health`, and reuses a healthy instance. It refuses to start over an unknown process or an unhealthy TSDT process unless restart was explicitly requested. Backend and frontend run hidden, with stdout and stderr under `.local\logs`.
+The customer-facing Cloudflare environment is the stable **DEMO** environment. Normal work must use the separate local **DEV** environment only. Do not restart, migrate, reset, rebuild, or otherwise modify DEMO as part of ordinary development. Promoting a verified change to DEMO is a separate, explicit operation after QA. DEV is never exposed through Cloudflare.
+
+DEMO keeps its existing resources unchanged: the repository's historical ports are frontend `5173`, backend HTTPS `7226`, and PostgreSQL `5432`. At the time this boundary was introduced, no listener was found on those ports from this worktree and no Cloudflare configuration was stored in the repository; do not infer the tunnel destination from this result.
+
+DEMO and DEV share the existing PostgreSQL instance on `127.0.0.1:5432`, but never the same logical database. DEMO uses the existing `tsdt` database; DEV always uses `vivatflow_dev`. Port `5174` remains reserved by the isolated E2E workflow, so DEV deliberately uses frontend port `5175`; its API uses `7227`. The startup script constructs the DEV connection string from local credentials in ignored `.env`, always with database `vivatflow_dev`; a pre-existing `ConnectionStrings__DefaultConnection` is never reused.
+
+Always use `scripts\start-local.ps1` to operate DEV. It only examines and controls the DEV API/frontend ports, checks the exact DEV command before reuse or termination, verifies the shared PostgreSQL service, and creates only `vivatflow_dev` if absent. It writes logs below `.local\logs\dev`. A listener on a DEV port that is not the expected DEV command is refused, never terminated.
 
 ```powershell
-# Reuse healthy local services, or start only services that are absent.
+# Reuse healthy DEV services, or start only DEV services that are absent.
 .\scripts\start-local.ps1
 
 # Start or reuse one service.
 .\scripts\start-local.ps1 -BackendOnly
 .\scripts\start-local.ps1 -FrontendOnly
 
-# Replace project-owned services after relevant code/configuration changes.
+# Replace only project-owned DEV services after relevant code/configuration changes.
 .\scripts\start-local.ps1 -Restart
+
+# Stop only DEV frontend and API. Shared PostgreSQL remains running for DEMO.
+.\scripts\start-local.ps1 -Stop
 ```
 
-Do not invoke `dotnet run` or `npm run dev` directly for the standard ports. During a restart, the script stops the project-owned listener, waits for the port to be released, and starts one replacement. Normal validation uses `scripts\validate.ps1`: its Release output is isolated from running APIs, so validation leaves healthy services running. If restored assets are missing, run `scripts\restore.ps1` explicitly once; it does not disable package signature checks.
+Do not invoke `dotnet run` or `npm run dev` directly for DEV ports. During a restart or stop, the script can only stop a listener whose command explicitly targets the DEV port; it cannot reuse or terminate DEMO's historical ports or database. `-Stop` never stops the shared PostgreSQL service. DEV migrations, bootstrap, and writes target only `vivatflow_dev`. Normal validation uses `scripts\validate.ps1`: its Release output is isolated from running APIs, so validation leaves healthy services running. If restored assets are missing, run `scripts\restore.ps1` explicitly once; it does not disable package signature checks.
 
-The API health endpoint is `GET /health`. Use the `https` launch profile: it listens only on `https://localhost:7226`. The default launch profile is also HTTPS so secure authentication and antiforgery cookies work during local development without relaxing their production-safe `CookieSecurePolicy.Always` setting. Development uses `SameSite=None; Secure` only because the Vite frontend is served on HTTP while the API is HTTPS; its explicit CORS allowlist and antiforgery token remain required. Non-development environments retain `SameSite=Lax; Secure`.
+The API health endpoint is `GET /health`; DEV is available at `https://localhost:7227` and `https://localhost:7227/health`. The DEV frontend is `http://127.0.0.1:5175`. The script starts the backend with its Development environment, DEV URL, DEV database connection, and the DEV frontend CORS origin without changing the historical launch profile or Vite defaults used by DEMO. Development uses `SameSite=None; Secure` only because the Vite frontend is served on HTTP while the API is HTTPS; its explicit CORS allowlist and antiforgery token remain required. Non-development environments retain `SameSite=Lax; Secure`.
 
 Trust the local ASP.NET Core development certificate once on the workstation if it is not already trusted:
 
@@ -47,13 +56,12 @@ dotnet dev-certs https --trust
 Before the first API start, set environment variables (never commit their values):
 
 ```powershell
-$env:ConnectionStrings__DefaultConnection = "Host=localhost;Port=5432;Database=tsdt;Username=tsdt;Password=<local-password>"
 $env:BootstrapAdmin__Email = "admin@example.test"
 $env:BootstrapAdmin__FullName = "Local Bootstrap Administrator"
 $env:BootstrapAdmin__Password = "<unique-local-password>"
 ```
 
-The app applies its Identity migration at startup. The configured administrator is created only when no users exist. For local frontend development, Vite uses the canonical `http://127.0.0.1:5173` and proxies `/api` and `/health` to `https://localhost:7226`. The frontend uses same-origin relative API routes by default. The API CORS allowlist remains limited to that direct local frontend origin for cases that bypass the proxy.
+The app applies its Identity migration at DEV startup only, against `vivatflow_dev`. The configured administrator is created only when no users exist. DEV Vite proxies `/api` and `/health` to `https://localhost:7227`; the frontend uses same-origin relative API routes by default. The API CORS allowlist is injected only for `http://127.0.0.1:5175` in the DEV process.
 
 Authentication endpoints are `GET /api/auth/csrf`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/change-password`, and `POST /api/auth/logout`; there is no public registration endpoint. The frontend fetches `/api/auth/csrf` before every state-changing request and sends its `token` response in `X-CSRF-TOKEN`, while retaining `credentials: 'include'` for the HttpOnly cookie.
 
@@ -154,15 +162,15 @@ Create an ignored local environment file, review/change its local-only password,
 
 ```powershell
 Copy-Item .env.example .env
-docker compose -f infrastructure/docker-compose.yml up -d
+.\scripts\start-local.ps1 -BackendOnly
 ```
 
-Compose binds PostgreSQL only to the canonical local address `127.0.0.1:5432`; `POSTGRES_PORT` is not configurable for the standard environment.
+The existing `infrastructure/docker-compose.yml` supplies the shared PostgreSQL instance on `127.0.0.1:5432`. DEV does not start, stop, recreate, or reset that container. When the shared service is available, `scripts\start-local.ps1` safely checks `pg_database` and creates only `vivatflow_dev` if absent. It intentionally does not use `POSTGRES_DB` or `ConnectionStrings__DefaultConnection` for DEV identity.
 
-Stop local infrastructure with:
+Stop DEV application processes with:
 
 ```powershell
-docker compose -f infrastructure/docker-compose.yml down
+.\scripts\start-local.ps1 -Stop
 ```
 
 MinIO remains deferred until document storage is implemented. The API applies the existing Identity and Customers migrations at startup.

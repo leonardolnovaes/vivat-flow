@@ -4,12 +4,14 @@ using Tsdt.Api.Audit;
 using Tsdt.Api.Customers;
 using Tsdt.Api.Services;
 using Tsdt.Api.Quotes;
+using Tsdt.Api.Platform;
 
 namespace Tsdt.Api.Identity;
 
 public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
     : IdentityDbContext<ApplicationUser, ApplicationRole, string>(options)
 {
+    public Guid? TenantOrganizationId { get; set; }
     public DbSet<UserAdministrationAuditRecord> UserAdministrationAuditRecords => Set<UserAdministrationAuditRecord>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<CustomerContact> CustomerContacts => Set<CustomerContact>();
@@ -22,6 +24,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<QuoteAuditRecord> QuoteAuditRecords => Set<QuoteAuditRecord>();
     public DbSet<QuoteVisit> QuoteVisits => Set<QuoteVisit>();
     public DbSet<QuoteNumberCounter> QuoteNumberCounters => Set<QuoteNumberCounter>();
+    public DbSet<Organization> Organizations => Set<Organization>();
+    public DbSet<OrganizationAuditRecord> OrganizationAuditRecords => Set<OrganizationAuditRecord>();
+    public DbSet<ServiceLine> ServiceLines => Set<ServiceLine>();
+    public DbSet<OrganizationServiceLine> OrganizationServiceLines => Set<OrganizationServiceLine>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -31,7 +37,15 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(user => user.FullName).IsRequired().HasMaxLength(120);
             entity.Property(user => user.Email).HasMaxLength(254);
             entity.Property(user => user.NormalizedEmail).HasMaxLength(254);
+            entity.Property(user => user.PreferredLocale).HasMaxLength(5);
+            entity.HasIndex(user => user.OrganizationId);
+            entity.HasOne(user => user.Organization).WithMany().HasForeignKey(user => user.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(user => TenantOrganizationId == null || (!user.IsPlatformAdministrator && user.OrganizationId == TenantOrganizationId));
         });
+        builder.Entity<Organization>(entity => { entity.ToTable("Organizations"); entity.HasKey(item => item.Id); entity.Property(item => item.Name).IsRequired().HasMaxLength(200); entity.Property(item => item.Slug).IsRequired().HasMaxLength(80); entity.Property(item => item.Status).HasConversion<string>().HasMaxLength(16); entity.HasIndex(item => item.Slug).IsUnique(); });
+        builder.Entity<OrganizationAuditRecord>(entity => { entity.ToTable("OrganizationAuditRecords"); entity.HasKey(item => item.Id); entity.Property(item => item.ActorUserId).IsRequired(); entity.Property(item => item.Action).IsRequired().HasMaxLength(80); entity.HasIndex(item => new { item.OrganizationId, item.OccurredAtUtc }); entity.HasOne(item => item.Organization).WithMany().HasForeignKey(item => item.OrganizationId).OnDelete(DeleteBehavior.Restrict); });
+        builder.Entity<ServiceLine>(entity => { entity.ToTable("ServiceLines"); entity.HasKey(item => item.Id); entity.Property(item => item.Code).IsRequired().HasMaxLength(50); entity.Property(item => item.Name).IsRequired().HasMaxLength(160); entity.HasIndex(item => item.Code).IsUnique(); });
+        builder.Entity<OrganizationServiceLine>(entity => { entity.ToTable("OrganizationServiceLines"); entity.HasKey(item => new { item.OrganizationId, item.ServiceLineId }); entity.HasOne(item => item.Organization).WithMany().HasForeignKey(item => item.OrganizationId).OnDelete(DeleteBehavior.Restrict); entity.HasOne(item => item.ServiceLine).WithMany().HasForeignKey(item => item.ServiceLineId).OnDelete(DeleteBehavior.Restrict); });
         builder.Entity<UserAdministrationAuditRecord>().HasIndex(record => record.TargetUserId);
         builder.Entity<Customer>(entity =>
         {
@@ -43,9 +57,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(customer => customer.Notes).HasMaxLength(2000);
             entity.Property(customer => customer.CreatedByUserId).IsRequired();
             entity.Property(customer => customer.UpdatedByUserId).IsRequired();
+            entity.Property(customer => customer.OrganizationId).IsRequired();
             entity.Property(customer => customer.Version).IsConcurrencyToken();
-            entity.HasIndex(customer => customer.Cnpj).IsUnique();
-            entity.HasIndex(customer => new { customer.IsActive, customer.LegalName });
+            entity.HasIndex(customer => new { customer.OrganizationId, customer.Cnpj }).IsUnique();
+            entity.HasIndex(customer => new { customer.OrganizationId, customer.IsActive, customer.LegalName });
+            entity.HasOne<Organization>().WithMany().HasForeignKey(customer => customer.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(customer => TenantOrganizationId == null || customer.OrganizationId == TenantOrganizationId);
         });
         builder.Entity<CustomerContact>(entity =>
         {
@@ -100,9 +117,14 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(service => service.BasePrice).HasPrecision(18, 2);
             entity.Property(service => service.CreatedByUserId).IsRequired();
             entity.Property(service => service.UpdatedByUserId).IsRequired();
+            entity.Property(service => service.OrganizationId).IsRequired();
+            entity.Property(service => service.ServiceLineId).IsRequired();
             entity.Property(service => service.Version).IsConcurrencyToken();
-            entity.HasIndex(service => service.Code).IsUnique();
-            entity.HasIndex(service => new { service.IsActive, service.Name });
+            entity.HasIndex(service => new { service.OrganizationId, service.Code }).IsUnique();
+            entity.HasIndex(service => new { service.OrganizationId, service.IsActive, service.Name });
+            entity.HasOne<Organization>().WithMany().HasForeignKey(service => service.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(service => service.ServiceLine).WithMany().HasForeignKey(service => service.ServiceLineId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(service => TenantOrganizationId == null || service.OrganizationId == TenantOrganizationId);
         });
         builder.Entity<ServiceAuditRecord>(entity =>
         {
@@ -121,7 +143,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasKey(quote => quote.Id); entity.Property(quote => quote.Number).IsRequired().HasMaxLength(16);
             entity.Property(quote => quote.CustomerLegalNameSnapshot).IsRequired().HasMaxLength(200); entity.Property(quote => quote.CustomerCnpjSnapshot).IsRequired().HasMaxLength(14);
             entity.Property(quote => quote.TotalAmount).HasPrecision(18, 2); entity.Property(quote => quote.Notes).HasMaxLength(2000); entity.Property(quote => quote.ServiceAddressSnapshot).HasMaxLength(700); entity.Property(quote => quote.ApprovalRecipientName).HasMaxLength(120); entity.Property(quote => quote.ApprovalRecipientEmail).HasMaxLength(254); entity.Property(quote => quote.ClientResponseNotes).HasMaxLength(2000); entity.Property(quote => quote.Version).IsConcurrencyToken();
-            entity.HasIndex(quote => quote.Number).IsUnique(); entity.HasIndex(quote => new { quote.Status, quote.UpdatedAtUtc }); entity.HasIndex(quote => new { quote.CustomerId, quote.CreatedAtUtc }); entity.HasIndex(quote => quote.SentForApprovalAt); entity.HasIndex(quote => quote.ValidUntil);
+            entity.Property(quote => quote.OrganizationId).IsRequired(); entity.HasIndex(quote => new { quote.OrganizationId, quote.Number }).IsUnique(); entity.HasIndex(quote => new { quote.OrganizationId, quote.Status, quote.UpdatedAtUtc }); entity.HasIndex(quote => new { quote.OrganizationId, quote.CustomerId, quote.CreatedAtUtc }); entity.HasIndex(quote => quote.SentForApprovalAt); entity.HasIndex(quote => quote.ValidUntil);
+            entity.HasOne<Organization>().WithMany().HasForeignKey(quote => quote.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(quote => TenantOrganizationId == null || quote.OrganizationId == TenantOrganizationId);
             entity.HasIndex(quote => quote.ResponsibleUserId); entity.HasOne(quote => quote.ResponsibleUser).WithMany().HasForeignKey(quote => quote.ResponsibleUserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(quote => quote.Customer).WithMany().HasForeignKey(quote => quote.CustomerId).OnDelete(DeleteBehavior.Restrict);
         });
@@ -129,5 +153,28 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         builder.Entity<QuoteAuditRecord>(entity => { entity.ToTable("QuoteAuditRecords"); entity.HasKey(record => record.Id); entity.Property(record => record.ActorUserId).IsRequired(); entity.Property(record => record.Action).IsRequired().HasMaxLength(80); entity.Property(record => record.ChangedFields).HasMaxLength(500); entity.HasIndex(record => new { record.QuoteId, record.OccurredAtUtc }); entity.HasOne(record => record.Quote).WithMany().HasForeignKey(record => record.QuoteId).OnDelete(DeleteBehavior.Restrict); });
         builder.Entity<QuoteVisit>(entity => { entity.ToTable("QuoteVisits"); entity.HasKey(visit => visit.Id); entity.Property(visit => visit.AssignedUserId).IsRequired(); entity.Property(visit => visit.LocationSnapshot).HasMaxLength(700); entity.Property(visit => visit.Notes).HasMaxLength(2000); entity.Property(visit => visit.CreatedByUserId).IsRequired(); entity.Property(visit => visit.UpdatedByUserId).IsRequired(); entity.HasIndex(visit => visit.QuoteId); entity.HasIndex(visit => visit.AssignedUserId); entity.HasIndex(visit => visit.ScheduledStart); entity.HasOne(visit => visit.Quote).WithMany(quote => quote.Visits).HasForeignKey(visit => visit.QuoteId).OnDelete(DeleteBehavior.Restrict); entity.HasOne(visit => visit.AssignedUser).WithMany().HasForeignKey(visit => visit.AssignedUserId).OnDelete(DeleteBehavior.Restrict); });
         builder.Entity<QuoteNumberCounter>(entity => { entity.ToTable("QuoteNumberCounters", table => table.HasCheckConstraint("CK_QuoteNumberCounters_LastNumber_Range", "\"LastNumber\" >= 1 AND \"LastNumber\" <= 999999")); entity.HasKey(counter => counter.Year); });
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        ApplyTenantOwnership();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void ApplyTenantOwnership()
+    {
+        if (TenantOrganizationId is not Guid organizationId) return;
+        ApplyOwnership(ChangeTracker.Entries<Customer>(), organizationId, customer => customer.OrganizationId, (customer, value) => customer.OrganizationId = value);
+        ApplyOwnership(ChangeTracker.Entries<Service>(), organizationId, service => service.OrganizationId, (service, value) => service.OrganizationId = value);
+        ApplyOwnership(ChangeTracker.Entries<Quote>(), organizationId, quote => quote.OrganizationId, (quote, value) => quote.OrganizationId = value);
+    }
+
+    private static void ApplyOwnership<TEntity>(IEnumerable<Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TEntity>> entries, Guid organizationId, Func<TEntity, Guid> getOrganizationId, Action<TEntity, Guid> setOrganizationId) where TEntity : class
+    {
+        foreach (var entry in entries.Where(entry => entry.State is EntityState.Added or EntityState.Modified))
+        {
+            if (entry.State == EntityState.Added && getOrganizationId(entry.Entity) == Guid.Empty) setOrganizationId(entry.Entity, organizationId);
+            if (!TenantOwnershipRules.IsOwnedBy(organizationId, getOrganizationId(entry.Entity))) throw new UnauthorizedAccessException("Cross-tenant persistence is not allowed.");
+        }
     }
 }

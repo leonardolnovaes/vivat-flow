@@ -13,6 +13,7 @@ public enum QuoteRiskDegree { One = 1, Two = 2, Three = 3, Four = 4 }
 public sealed class Quote
 {
     public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
     public required string Number { get; set; }
     public Guid CustomerId { get; set; }
     public required string CustomerLegalNameSnapshot { get; set; }

@@ -3,6 +3,9 @@ namespace Tsdt.Api.Services;
 public sealed class Service
 {
     public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid ServiceLineId { get; set; }
+    public ServiceLine ServiceLine { get; set; } = null!;
     public required string Code { get; set; }
     public required string Name { get; set; }
     public string? Description { get; set; }

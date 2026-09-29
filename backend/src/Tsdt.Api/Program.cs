@@ -9,6 +9,7 @@ using Tsdt.Api.Customers;
 using Tsdt.Api.Identity;
 using Tsdt.Api.Services;
 using Tsdt.Api.Quotes;
+using Tsdt.Api.Platform;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -24,6 +25,8 @@ if (builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddDataProtection().UseEphemeralDataProtectionProvider();
 }
 builder.Services.Configure<BootstrapAdminOptions>(builder.Configuration.GetSection(BootstrapAdminOptions.SectionName));
+builder.Services.Configure<OrganizationBootstrapOptions>(builder.Configuration.GetSection(OrganizationBootstrapOptions.SectionName));
+builder.Services.Configure<PlatformBootstrapAdminOptions>(builder.Configuration.GetSection(PlatformBootstrapAdminOptions.SectionName));
 builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 {
     options.User.RequireUniqueEmail = true;
@@ -61,12 +64,14 @@ builder.Services.AddAntiforgery(options =>
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(AuthorizationPolicies.CommercialAdmin, policy => policy.RequireRole(IdentityRoles.Admin));
+    options.AddPolicy(AuthorizationPolicies.PlatformAdministrator, policy => policy.RequireClaim("platform_administrator", "true"));
 });
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
 {
     if (frontendOrigins.Length > 0) policy.WithOrigins(frontendOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
 }));
 builder.Services.AddScoped<IdentityBootstrapper>();
+builder.Services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, PlatformClaimsPrincipalFactory>();
 builder.Services.AddSingleton<TemporaryPasswordGenerator>();
 
 var app = builder.Build();
@@ -97,6 +102,23 @@ app.Use(async (context, next) =>
             return;
         }
 
+        var organization = user.OrganizationId is Guid organizationId
+            ? await context.RequestServices.GetRequiredService<ApplicationDbContext>().Organizations.FindAsync(organizationId)
+            : null;
+        if (!OrganizationAccess.IsTenantAccessAllowed(user.IsPlatformAdministrator, user.OrganizationId, organization?.Status))
+        { context.Response.StatusCode = StatusCodes.Status403Forbidden; await context.Response.WriteAsJsonAsync(new { error = "O acesso da sua organização ao Vivat Flow está bloqueado. Entre em contato com o responsável pela sua conta." }); return; }
+
+        if (user.IsPlatformAdministrator && !context.Request.Path.StartsWithSegments("/api/platform") && !context.Request.Path.StartsWithSegments("/api/auth"))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        if (!user.IsPlatformAdministrator && user.OrganizationId is Guid tenantOrganizationId)
+        {
+            context.Items[TenantContext.OrganizationItemKey] = tenantOrganizationId;
+            context.RequestServices.GetRequiredService<ApplicationDbContext>().TenantOrganizationId = tenantOrganizationId;
+        }
     }
 
     await next();
@@ -116,7 +138,7 @@ auth.MapGet("/password-policy", (IOptions<IdentityOptions> identityOptions) =>
     var password = identityOptions.Value.Password;
     return Results.Ok(new PasswordPolicyResponse(password.RequiredLength, password.RequireDigit, password.RequireLowercase, password.RequireUppercase, password.RequireNonAlphanumeric, PasswordPolicyDescription(password)));
 });
-auth.MapPost("/login", async (LoginRequest request, HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager) =>
+auth.MapPost("/login", async (LoginRequest request, HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext) =>
 {
     try { await antiforgery.ValidateRequestAsync(context); }
     catch (AntiforgeryValidationException) { return Results.BadRequest(); }
@@ -124,6 +146,8 @@ auth.MapPost("/login", async (LoginRequest request, HttpContext context, IAntifo
     if (user is null || !user.IsActive) return Results.Unauthorized();
     var result = await signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
     if (!result.Succeeded) return Results.Unauthorized();
+    var organization = user.OrganizationId is Guid organizationId ? await dbContext.Organizations.FindAsync(organizationId) : null;
+    if (!OrganizationAccess.IsTenantAccessAllowed(user.IsPlatformAdministrator, user.OrganizationId, organization?.Status)) return Results.StatusCode(StatusCodes.Status403Forbidden);
     await signInManager.SignInAsync(user, isPersistent: false);
     return Results.Ok(await CreateCurrentUserResponseAsync(user, userManager));
 });
@@ -157,6 +181,17 @@ auth.MapPost("/logout", async (HttpContext context, IAntiforgery antiforgery, Si
     await signInManager.SignOutAsync();
     return Results.NoContent();
 }).RequireAuthorization();
+auth.MapPut("/preferred-locale", async (UpdatePreferredLocaleRequest request, HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> userManager) =>
+{
+    if (!await ValidateAntiforgeryAsync(context, antiforgery)) return Results.BadRequest();
+    if (!LocaleRules.IsSupported(request.PreferredLocale)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["preferredLocale"] = ["Unsupported locale."] });
+    var user = await userManager.GetUserAsync(context.User);
+    if (user is null || !user.IsActive) return Results.Unauthorized();
+    user.PreferredLocale = request.PreferredLocale;
+    var update = await userManager.UpdateAsync(user);
+    if (!update.Succeeded) return IdentityValidationProblem(update);
+    return Results.Ok(await CreateCurrentUserResponseAsync(user, userManager));
+}).RequireAuthorization();
 
 var adminUsers = app.MapGroup("/api/admin/users").RequireAuthorization(policy => policy.RequireRole(IdentityRoles.Admin));
 adminUsers.MapGet("", async (string? search, bool? isActive, ApplicationDbContext dbContext, UserManager<ApplicationUser> userManager) =>
@@ -189,7 +224,9 @@ adminUsers.MapPost("", async (CreateUserRequest request, HttpContext context, IA
     if (await userManager.FindByEmailAsync(email!) is not null) return Results.Conflict(new { errors = new Dictionary<string, string[]> { ["email"] = ["Já existe um usuário com este e-mail."] } });
 
     var temporaryPassword = passwordGenerator.Generate();
-    var user = new ApplicationUser { FullName = fullName!, UserName = email, Email = email, EmailConfirmed = true, IsActive = true, MustChangePassword = true };
+    var actor = await userManager.GetUserAsync(context.User);
+    if (actor?.OrganizationId is not Guid organizationId || actor.IsPlatformAdministrator) return Results.Conflict(new { error = "Não foi possível determinar a organização do administrador." });
+    var user = new ApplicationUser { FullName = fullName!, UserName = email, Email = email, EmailConfirmed = true, IsActive = true, MustChangePassword = true, OrganizationId = organizationId };
     await using var transaction = await dbContext.Database.BeginTransactionAsync();
     var creation = await userManager.CreateAsync(user, temporaryPassword);
     if (!creation.Succeeded) return IdentityValidationProblem(creation);
@@ -307,6 +344,8 @@ adminUsers.MapPost("/{id}/reset-password", async (string id, HttpContext context
 app.MapCustomerEndpoints();
 app.MapServiceEndpoints();
 app.MapQuoteEndpoints();
+app.MapPlatformOrganizationEndpoints();
+app.MapServiceLineEndpoints();
 
 using (var scope = app.Services.CreateScope())
 {
@@ -326,7 +365,7 @@ app.Run();
 static async Task<CurrentUserResponse> CreateCurrentUserResponseAsync(ApplicationUser user, UserManager<ApplicationUser> userManager)
 {
     var roles = await userManager.GetRolesAsync(user);
-    return new CurrentUserResponse(user.Id, user.FullName, user.Email!, roles.ToArray(), user.MustChangePassword);
+    return new CurrentUserResponse(user.Id, user.FullName, user.Email!, roles.ToArray(), user.MustChangePassword, user.IsPlatformAdministrator, user.PreferredLocale);
 }
 
 static async Task<UserAdministrationResponse> CreateUserAdministrationResponseAsync(ApplicationUser user, UserManager<ApplicationUser> userManager) => new(user.Id, user.FullName, user.Email!, (await userManager.GetRolesAsync(user)).ToArray(), user.IsActive, user.MustChangePassword);

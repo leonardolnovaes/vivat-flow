@@ -87,3 +87,9 @@ Lightweight ADR log for MVP 1 decisions; later decisions may supersede an entry.
 **Decision:** Quotes are commercial/management records. The `CommercialAdmin` policy is ADMIN-only in this module; operational USER and MANAGER accounts have no Quote access. Quotes retain immutable customer/service snapshots, use São Paulo annual numbering, and allow only `Draft → AwaitingApproval`, explicit reopen to Draft, then approval, rejection, or cancellation. Execution authorization is outside this module.
 
 **Why:** Commercial approval must remain controlled while preserving the proposal context that was actually reviewed.
+
+## ADR-018 - Control Plane privacy boundary
+
+**Decision:** Manage Organization identity, lifecycle, and platform access through a separate Control Plane. Platform Administrators are separate from tenant `ADMIN` users and cannot use this boundary to operate tenant business data.
+
+**Why:** Platform administration needs account-level control without granting unnecessary visibility into a tenant's operational or personal data. This is a privacy-by-design and least-privilege boundary; legal LGPD compliance also requires processes outside the codebase.

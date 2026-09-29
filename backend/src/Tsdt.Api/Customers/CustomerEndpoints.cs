@@ -35,14 +35,15 @@ public static partial class CustomerEndpoints
         customers.MapPost("/{customerId:guid}/units/{unitId:guid}/deactivate", DeactivateUnitAsync).RequireAuthorization(policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager));
     }
 
-    private static async Task<IResult> ListAsync(int? page, int? pageSize, string? search, bool? isActive, string? sort, string? direction, ClaimsPrincipal user, ApplicationDbContext db)
+    private static async Task<IResult> ListAsync(int? page, int? pageSize, string? search, bool? isActive, string? sort, string? direction, HttpContext context, ClaimsPrincipal user, ApplicationDbContext db)
     {
         if (search?.Length > 200)
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["search"] = ["A busca deve ter no máximo 200 caracteres."] });
         var requestedPage = Math.Max(page ?? 1, 1);
         var requestedPageSize = Math.Clamp(pageSize ?? 25, 1, 100);
         var isReadOnlyUser = user.IsInRole(IdentityRoles.User);
-        IQueryable<Customer> query = db.Customers.AsNoTracking();
+        var organizationId = TenantContext.OrganizationId(context);
+        IQueryable<Customer> query = db.Customers.AsNoTracking().Where(customer => customer.OrganizationId == organizationId);
         if (isReadOnlyUser) query = query.Where(customer => customer.IsActive);
         else if (isActive.HasValue) query = query.Where(customer => customer.IsActive == isActive.Value);
         if (!string.IsNullOrWhiteSpace(search))
@@ -76,9 +77,10 @@ public static partial class CustomerEndpoints
         return Results.Ok(new CustomerListResponse(items, requestedPage, requestedPageSize, total));
     }
 
-    private static async Task<IResult> GetAsync(Guid id, ClaimsPrincipal user, ApplicationDbContext db)
+    private static async Task<IResult> GetAsync(Guid id, HttpContext context, ClaimsPrincipal user, ApplicationDbContext db)
     {
-        var query = db.Customers.AsNoTracking().Include(customer => customer.Contacts).Include(customer => customer.Units).Where(customer => customer.Id == id);
+        var organizationId = TenantContext.OrganizationId(context);
+        var query = db.Customers.AsNoTracking().Include(customer => customer.Contacts).Include(customer => customer.Units).Where(customer => customer.Id == id && customer.OrganizationId == organizationId);
         if (user.IsInRole(IdentityRoles.User)) query = query.Where(customer => customer.IsActive);
         var customer = await query.SingleOrDefaultAsync();
         return customer is null ? Results.NotFound() : Results.Ok(ToDetail(customer));
@@ -89,11 +91,12 @@ public static partial class CustomerEndpoints
         if (!await ValidateAntiforgeryAsync(context, antiforgery)) return CsrfFailure();
         var input = ValidateCustomer(request.LegalName, request.TradeName, request.Cnpj, request.Notes);
         if (input.Errors is not null) return Results.ValidationProblem(input.Errors);
-        var existing = await db.Customers.Include(customer => customer.Contacts).Include(customer => customer.Units).SingleOrDefaultAsync(customer => customer.Cnpj == input.Cnpj);
+        var organizationId = TenantContext.OrganizationId(context);
+        var existing = await db.Customers.Include(customer => customer.Contacts).Include(customer => customer.Units).SingleOrDefaultAsync(customer => customer.OrganizationId == organizationId && customer.Cnpj == input.Cnpj);
         if (existing is not null) return DuplicateCnpj(existing);
         var now = DateTimeOffset.UtcNow;
         var actor = GetActor(context);
-        var customer = new Customer { Id = Guid.NewGuid(), LegalName = input.LegalName!, TradeName = input.TradeName, Cnpj = input.Cnpj!, Notes = input.Notes, IsActive = true, CreatedAtUtc = now, UpdatedAtUtc = now, CreatedByUserId = actor, UpdatedByUserId = actor, Version = Guid.NewGuid() };
+        var customer = new Customer { Id = Guid.NewGuid(), OrganizationId = organizationId, LegalName = input.LegalName!, TradeName = input.TradeName, Cnpj = input.Cnpj!, Notes = input.Notes, IsActive = true, CreatedAtUtc = now, UpdatedAtUtc = now, CreatedByUserId = actor, UpdatedByUserId = actor, Version = Guid.NewGuid() };
         db.Customers.Add(customer);
         AddAudit(db, customer.Id, actor, "CUSTOMER_CREATED", "LegalName,Cnpj");
         return await SaveAsync(db, () => Results.Created($"/api/customers/{customer.Id}", ToDetail(customer)));
@@ -104,12 +107,13 @@ public static partial class CustomerEndpoints
         if (!await ValidateAntiforgeryAsync(context, antiforgery)) return CsrfFailure();
         var input = ValidateCustomer(request.LegalName, request.TradeName, request.Cnpj, request.Notes);
         if (input.Errors is not null) return Results.ValidationProblem(input.Errors);
-        var customer = await db.Customers.Include(customer => customer.Contacts).Include(customer => customer.Units).SingleOrDefaultAsync(customer => customer.Id == id);
+        var organizationId = TenantContext.OrganizationId(context);
+        var customer = await db.Customers.Include(customer => customer.Contacts).Include(customer => customer.Units).SingleOrDefaultAsync(customer => customer.Id == id && customer.OrganizationId == organizationId);
         if (customer is null) return Results.NotFound();
         if (customer.Version != request.ExpectedVersion) return Stale();
         if (customer.Cnpj != input.Cnpj)
         {
-            var existing = await db.Customers.Include(other => other.Contacts).Include(other => other.Units).SingleOrDefaultAsync(other => other.Id != id && other.Cnpj == input.Cnpj);
+            var existing = await db.Customers.Include(other => other.Contacts).Include(other => other.Units).SingleOrDefaultAsync(other => other.OrganizationId == organizationId && other.Id != id && other.Cnpj == input.Cnpj);
             if (existing is not null) return DuplicateCnpj(existing);
         }
         customer.LegalName = input.LegalName!; customer.TradeName = input.TradeName; customer.Cnpj = input.Cnpj!; customer.Notes = input.Notes;
@@ -123,7 +127,8 @@ public static partial class CustomerEndpoints
     private static async Task<IResult> ChangeCustomerStatusAsync(Guid id, CustomerVersionRequest request, bool active, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db)
     {
         if (!await ValidateAntiforgeryAsync(context, antiforgery)) return CsrfFailure();
-        var customer = await db.Customers.Include(customer => customer.Contacts).Include(customer => customer.Units).SingleOrDefaultAsync(customer => customer.Id == id);
+        var organizationId = TenantContext.OrganizationId(context);
+        var customer = await db.Customers.Include(customer => customer.Contacts).Include(customer => customer.Units).SingleOrDefaultAsync(customer => customer.Id == id && customer.OrganizationId == organizationId);
         if (customer is null) return Results.NotFound();
         if (customer.Version != request.ExpectedVersion) return Stale();
         if (customer.IsActive != active)
@@ -140,7 +145,7 @@ public static partial class CustomerEndpoints
         if (!await ValidateAntiforgeryAsync(context, antiforgery)) return CsrfFailure();
         var input = ValidateContact(request.Name, request.RoleOrDepartment, request.Email, request.Phone);
         if (input.Errors is not null) return Results.ValidationProblem(input.Errors);
-        var customer = await db.Customers.SingleOrDefaultAsync(customer => customer.Id == customerId);
+        var customer = await TenantCustomerAsync(db, customerId, context);
         if (customer is null) return Results.NotFound();
         if (customer.Version != request.ExpectedVersion) return Stale();
         if (request.IsPrimary && await HasPrimaryContactAsync(db, customerId, null)) return PrimaryContactConflict();
@@ -156,7 +161,7 @@ public static partial class CustomerEndpoints
         if (!await ValidateAntiforgeryAsync(context, antiforgery)) return CsrfFailure();
         var input = ValidateContact(request.Name, request.RoleOrDepartment, request.Email, request.Phone);
         if (input.Errors is not null) return Results.ValidationProblem(input.Errors);
-        var customer = await db.Customers.SingleOrDefaultAsync(customer => customer.Id == customerId);
+        var customer = await TenantCustomerAsync(db, customerId, context);
         if (customer is null) return Results.NotFound();
         if (customer.Version != request.ExpectedVersion) return Stale();
         var contact = await db.CustomerContacts.SingleOrDefaultAsync(item => item.Id == contactId && item.CustomerId == customerId);
@@ -172,7 +177,7 @@ public static partial class CustomerEndpoints
     private static async Task<IResult> ChangeContactStatusAsync(Guid customerId, Guid contactId, CustomerVersionRequest request, bool active, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db)
     {
         if (!await ValidateAntiforgeryAsync(context, antiforgery)) return CsrfFailure();
-        var customer = await db.Customers.SingleOrDefaultAsync(customer => customer.Id == customerId);
+        var customer = await TenantCustomerAsync(db, customerId, context);
         if (customer is null) return Results.NotFound();
         if (customer.Version != request.ExpectedVersion) return Stale();
         var contact = await db.CustomerContacts.SingleOrDefaultAsync(item => item.Id == contactId && item.CustomerId == customerId);
@@ -192,7 +197,7 @@ public static partial class CustomerEndpoints
         if (!await ValidateAntiforgeryAsync(context, antiforgery)) return CsrfFailure();
         var input = ValidateUnit(request);
         if (input.Errors is not null) return Results.ValidationProblem(input.Errors);
-        var customer = await db.Customers.SingleOrDefaultAsync(customer => customer.Id == customerId);
+        var customer = await TenantCustomerAsync(db, customerId, context);
         if (customer is null) return Results.NotFound();
         if (customer.Version != request.ExpectedVersion) return Stale();
         if (request.IsPrimary && await HasPrimaryUnitAsync(db, customerId, null)) return PrimaryUnitConflict();
@@ -207,7 +212,7 @@ public static partial class CustomerEndpoints
         if (!await ValidateAntiforgeryAsync(context, antiforgery)) return CsrfFailure();
         var input = ValidateUnit(new CreateUnitRequest(request.Name, request.Street, request.Number, request.Complement, request.District, request.City, request.StateCode, request.PostalCode, request.IsPrimary, request.ExpectedVersion));
         if (input.Errors is not null) return Results.ValidationProblem(input.Errors);
-        var customer = await db.Customers.SingleOrDefaultAsync(customer => customer.Id == customerId);
+        var customer = await TenantCustomerAsync(db, customerId, context);
         if (customer is null) return Results.NotFound();
         if (customer.Version != request.ExpectedVersion) return Stale();
         var unit = await db.CustomerUnits.SingleOrDefaultAsync(item => item.Id == unitId && item.CustomerId == customerId);
@@ -223,7 +228,7 @@ public static partial class CustomerEndpoints
     private static async Task<IResult> ChangeUnitStatusAsync(Guid customerId, Guid unitId, CustomerVersionRequest request, bool active, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db)
     {
         if (!await ValidateAntiforgeryAsync(context, antiforgery)) return CsrfFailure();
-        var customer = await db.Customers.SingleOrDefaultAsync(customer => customer.Id == customerId);
+        var customer = await TenantCustomerAsync(db, customerId, context);
         if (customer is null) return Results.NotFound();
         if (customer.Version != request.ExpectedVersion) return Stale();
         var unit = await db.CustomerUnits.SingleOrDefaultAsync(item => item.Id == unitId && item.CustomerId == customerId);
@@ -258,6 +263,7 @@ public static partial class CustomerEndpoints
     private static void AddAudit(ApplicationDbContext db, Guid customerId, string actor, string action, string? changedFields) => db.CustomerAuditRecords.Add(new CustomerAuditRecord { Id = Guid.NewGuid(), CustomerId = customerId, ActorUserId = actor, Action = action, OccurredAtUtc = DateTimeOffset.UtcNow, ChangedFields = changedFields });
     private static void Touch(Customer customer, string actor) { customer.UpdatedAtUtc = DateTimeOffset.UtcNow; customer.UpdatedByUserId = actor; customer.Version = Guid.NewGuid(); }
     private static Task<bool> HasPrimaryContactAsync(ApplicationDbContext db, Guid customerId, Guid? exceptId) => db.CustomerContacts.AnyAsync(contact => contact.CustomerId == customerId && contact.IsActive && contact.IsPrimary && (!exceptId.HasValue || contact.Id != exceptId));
+    private static Task<Customer?> TenantCustomerAsync(ApplicationDbContext db, Guid customerId, HttpContext context) => db.Customers.SingleOrDefaultAsync(customer => customer.Id == customerId && customer.OrganizationId == TenantContext.OrganizationId(context));
     private static Task<bool> HasPrimaryUnitAsync(ApplicationDbContext db, Guid customerId, Guid? exceptId) => db.CustomerUnits.AnyAsync(unit => unit.CustomerId == customerId && unit.IsActive && unit.IsPrimary && (!exceptId.HasValue || unit.Id != exceptId));
     private static CustomerSummaryResponse ToSummary(Customer customer)
     {

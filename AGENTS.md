@@ -98,6 +98,10 @@ This allows the project to identify validation waste.
 
 ## Local application runtime
 
+### Permanent DEMO / DEV boundary
+
+The customer-facing Cloudflare environment is DEMO. Normal local work is DEV only: use `scripts\start-local.ps1`, which owns frontend `5175`, API `7227`, and the separate `vivatflow_dev` logical database on the shared PostgreSQL port `5432`. Never restart, migrate, reset, or otherwise change DEMO during ordinary development. DEV and DEMO may share the PostgreSQL instance, but never the same database. Promotion to DEMO is an explicit operation after QA; DEV is never exposed through Cloudflare.
+
 When the user asks to start or run the application, start the complete local environment and keep it running for manual browser validation. This includes, when required:
 
 - Repository Docker Compose dependencies.

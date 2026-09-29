@@ -195,7 +195,9 @@ public sealed class CustomerApiTests
     {
         using var scope = factory.Services.CreateScope();
         var manager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        var user = new ApplicationUser { FullName = "Customer Reader", UserName = email, Email = email, EmailConfirmed = true, IsActive = true, MustChangePassword = false };
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var organizationId = await db.Organizations.Select(organization => organization.Id).SingleAsync();
+        var user = new ApplicationUser { FullName = "Customer Reader", UserName = email, Email = email, EmailConfirmed = true, IsActive = true, MustChangePassword = false, OrganizationId = organizationId };
         Assert.True((await manager.CreateAsync(user, "Userpass1!Password")).Succeeded);
         Assert.True((await manager.AddToRoleAsync(user, role)).Succeeded);
         return user;

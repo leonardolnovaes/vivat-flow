@@ -69,4 +69,20 @@ Authentication uses an HttpOnly, Secure, SameSite=Lax Identity cookie. The React
 
 The forced-password-change middleware denies API access for authenticated users whose `MustChangePassword` is true, except the session profile, password change, logout, and CSRF endpoints. Future protected APIs inherit this guard.
 
+## Vivat Flow Control Plane
+
+Vivat Flow is evolving into a multi-tenant SaaS modular monolith. `Organization` represents a Vivat Flow customer/tenant; `Customer` remains an Organization's business customer. The Control Plane is a separate `/api/platform` and `/plataforma` boundary for platform administrators, who are distinct from tenant `ADMIN` users and have no tenant operational permissions. It manages Organization identity and lifecycle only. Suspended and deactivated Organizations cannot use tenant APIs. Subscriptions, entitlements, billing, Service Lines, and aggregate operational-data isolation remain future work.
+
+### Control Plane privacy and LGPD posture
+
+The Control Plane follows privacy-by-design and security-by-design principles. It intentionally exposes only Organization account metadata needed to administer the SaaS service; it does not expose tenant Customers, Services, Quotes, Contracts, Scheduling, Work Orders, documents, or other operational content. Tenant isolation and least privilege are mandatory: a Platform Administrator is not a tenant `ADMIN`, and tenant roles grant no platform access. Lifecycle audit records retain the minimum accountable event context and must never contain passwords, tokens, secrets, or unnecessary personal data. This technical architecture supports LGPD obligations but does not by itself establish full legal compliance, which also depends on organizational and legal processes.
+
+Customers, Service Catalog, Quotes, Quote Visits, and tenant User Administration are tenant-isolated. Each request resolves the authenticated user's active Organization server-side; EF Core applies organization filters to tenant-owned aggregate roots and assigns ownership on persistence. Customer, Service, Quote, and eligible-professional lookups therefore cannot cross the authenticated Organization boundary. Child records derive ownership from their tenant-owned parent.
+
+Remaining tenancy debt is explicit: Contracts, Work Orders, documents, and future operational aggregates have not yet received complete Organization-level data isolation. The Control Plane must not provide platform access to operational records, and Platform Administrators are denied tenant operational API routes.
+
+## Internationalization foundation
+
+Vivat Flow supports `pt-BR` and `en-US`, with `en-US` as fallback. Locale resolution is user-specific: an explicit saved user preference wins, followed by an explicit browser-local preference, browser language detection, and fallback. The backend persists only validated `PreferredLocale` values on the user profile; technical identifiers and domain enums remain language-neutral, with localized presentation in the frontend. The same foundation is used by tenant and Platform Administrator experiences.
+
 User administration is an ADMIN-only API boundary. MVP 1 users have exactly one application role and are deactivated rather than deleted. Server-generated temporary passwords are returned only by their create/reset response and are never persisted outside Identity's password hash. A small `UserAdministrationAuditRecord` persists security events without passwords or tokens. Security-stamp validation occurs on every request so deactivation, role changes, and password resets invalidate stale sessions promptly.

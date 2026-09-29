@@ -3,6 +3,7 @@ namespace Tsdt.Api.Customers;
 public sealed class Customer
 {
     public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
     public required string LegalName { get; set; }
     public string? TradeName { get; set; }
     public required string Cnpj { get; set; }

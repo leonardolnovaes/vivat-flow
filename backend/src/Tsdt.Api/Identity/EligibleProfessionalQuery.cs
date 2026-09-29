@@ -9,7 +9,8 @@ public static class EligibleProfessionalQuery
         from user in db.Users.AsNoTracking()
         join membership in db.UserRoles on user.Id equals membership.UserId
         join role in db.Roles on membership.RoleId equals role.Id
-        where user.IsActive && (role.Name == IdentityRoles.Admin || role.Name == IdentityRoles.Manager)
+        where user.IsActive && (role.Name == IdentityRoles.Admin || role.Name == IdentityRoles.Manager) &&
+            (db.TenantOrganizationId == null || (user.OrganizationId == db.TenantOrganizationId && !user.IsPlatformAdministrator))
         select user;
     public static async Task<bool> ContainsAsync(ApplicationDbContext db, string? userId) =>
         !string.IsNullOrWhiteSpace(userId) && await Apply(db).AnyAsync(user => user.Id == userId);
