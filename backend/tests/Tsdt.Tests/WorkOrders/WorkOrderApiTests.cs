@@ -44,6 +44,10 @@ public sealed class WorkOrderApiTests
                 Assert.False(raw.Contains(forbidden, StringComparison.OrdinalIgnoreCase), $"Operational source includes {forbidden}.");
             var list = await client.GetFromJsonAsync<WorkOrderSourceListResponse>("/api/work-orders/sources?sourceType=Quote", Json);
             Assert.Contains(list!.Items, item => item.Id == quote.Id && item.CanCreate);
+            var lowerCustomerSearch = await client.GetFromJsonAsync<WorkOrderSourceListResponse>("/api/work-orders/sources?sourceType=Quote&search=historical", Json);
+            Assert.Contains(lowerCustomerSearch!.Items, item => item.Id == quote.Id);
+            var lowerReferenceSearch = await client.GetFromJsonAsync<WorkOrderSourceListResponse>($"/api/work-orders/sources?sourceType=Quote&search={quote.Number.ToLowerInvariant()}", Json);
+            Assert.Contains(lowerReferenceSearch!.Items, item => item.Id == quote.Id);
         }
         Assert.Equal(HttpStatusCode.Forbidden, (await managerClient.GetAsync($"/api/quotes/{quote.Id}")).StatusCode);
         var managerOrder = await Send<WorkOrderDetailResponse>(managerClient, HttpMethod.Post, "/api/work-orders/from-quote", new CreateWorkOrderRequest(quote.Id, null, null, null, null));
@@ -67,6 +71,41 @@ public sealed class WorkOrderApiTests
             Assert.Equal(HttpStatusCode.Forbidden, (await platformClient.GetAsync($"/api/work-orders/sources/quote/{quote.Id}")).StatusCode);
             Assert.Equal(HttpStatusCode.Forbidden, (await platformClient.GetAsync("/api/work-orders/sources?sourceType=Quote")).StatusCode);
         }
+    }
+
+    [Fact, Trait("Category", "Unit")]
+    public async Task Manager_cannot_preview_ineligible_quote_or_contract_details()
+    {
+        using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
+        var quote = await SeedQuoteAsync(factory);
+        var manager = await CreateUserAsync(factory, quote.OrganizationId, IdentityRoles.Manager, "ineligible-source-manager@test");
+        using var managerClient = IdentityTestClient.Create(factory); await IdentityTestClient.LoginAsync(managerClient, manager.Email!, "Userpass1!Password");
+        var quotePath = $"/api/work-orders/sources/quote/{quote.Id}";
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            quote.Status = QuoteStatus.Draft; db.Quotes.Update(quote); await db.SaveChangesAsync();
+        }
+        Assert.Equal(HttpStatusCode.NotFound, (await managerClient.GetAsync(quotePath)).StatusCode);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            quote.Status = QuoteStatus.Approved; db.Quotes.Update(quote); await db.SaveChangesAsync();
+        }
+
+        var contract = await SeedContractAsync(factory, quote, ContractStatus.Draft);
+        var contractPath = $"/api/work-orders/sources/contract/{contract.Id}";
+        foreach (var status in new[] { ContractStatus.Draft, ContractStatus.Ended, ContractStatus.Cancelled })
+        {
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                contract.Status = status; db.Contracts.Update(contract); await db.SaveChangesAsync();
+            }
+            Assert.Equal(HttpStatusCode.NotFound, (await managerClient.GetAsync(contractPath)).StatusCode);
+        }
+        Assert.Equal(HttpStatusCode.OK, (await managerClient.GetAsync(quotePath)).StatusCode);
     }
 
     [Fact, Trait("Category", "Unit")]
@@ -94,6 +133,8 @@ public sealed class WorkOrderApiTests
         Assert.Equal("Original address", contractPreview.Source.ServiceAddressSnapshot);
         Assert.False((await admin.GetFromJsonAsync<WorkOrderSourceDetailResponse>(quotePath, Json))!.Source.CanCreate);
         Assert.Contains((await admin.GetFromJsonAsync<WorkOrderSourceListResponse>("/api/work-orders/sources?sourceType=Contract", Json))!.Items, item => item.Id == contract.Id && item.CanCreate);
+        Assert.Contains((await admin.GetFromJsonAsync<WorkOrderSourceListResponse>("/api/work-orders/sources?sourceType=Contract&search=historical", Json))!.Items, item => item.Id == contract.Id);
+        Assert.Contains((await admin.GetFromJsonAsync<WorkOrderSourceListResponse>($"/api/work-orders/sources?sourceType=Contract&search={quote.Number.ToLowerInvariant()}", Json))!.Items, item => item.Id == contract.Id);
 
         var order = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Post, "/api/work-orders/from-contract", new CreateWorkOrderRequest(contract.Id, null, null, null, null));
         Assert.Equal(order.Id, (await admin.GetFromJsonAsync<WorkOrderSourceDetailResponse>(quotePath, Json))!.Source.CurrentWorkOrderId);

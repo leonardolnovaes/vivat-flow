@@ -27,13 +27,13 @@ public static class WorkOrderSourceEndpoints
         var organizationId = TenantContext.OrganizationId(context);
         var currentPage = Math.Max(page ?? 1, 1);
         var size = Math.Clamp(pageSize ?? 20, 1, 100);
-        var term = search?.Trim();
+        var term = search?.Trim().ToLowerInvariant();
         if (term?.Length > 120) return Results.ValidationProblem(new Dictionary<string, string[]> { ["search"] = ["Use no máximo 120 caracteres na busca."] });
         var offset = ((long)currentPage - 1) * size;
         if (sourceType == WorkOrderSourceType.Quote)
         {
             var query = db.Quotes.AsNoTracking().Where(item => item.OrganizationId == organizationId && item.Status == QuoteStatus.Approved);
-            if (!string.IsNullOrWhiteSpace(term)) query = query.Where(item => item.Number.Contains(term) || item.CustomerLegalNameSnapshot.Contains(term));
+            if (!string.IsNullOrWhiteSpace(term)) query = query.Where(item => item.Number.ToLower().Contains(term) || item.CustomerLegalNameSnapshot.ToLower().Contains(term));
             var total = await query.CountAsync();
             if (offset > int.MaxValue) return Results.Ok(new WorkOrderSourceListResponse([], currentPage, size, total));
             var rows = await query.OrderBy(item => item.CustomerLegalNameSnapshot).ThenBy(item => item.Number).ThenBy(item => item.Id)
@@ -48,7 +48,7 @@ public static class WorkOrderSourceEndpoints
                         join quote in db.Quotes.AsNoTracking() on contract.QuoteId equals quote.Id
                         where contract.OrganizationId == organizationId && quote.OrganizationId == organizationId && contract.Status == ContractStatus.Active
                         select new { contract, quote };
-            if (!string.IsNullOrWhiteSpace(term)) query = query.Where(item => item.contract.CustomerLegalNameSnapshot.Contains(term) || item.quote.Number.Contains(term));
+            if (!string.IsNullOrWhiteSpace(term)) query = query.Where(item => item.contract.CustomerLegalNameSnapshot.ToLower().Contains(term) || item.quote.Number.ToLower().Contains(term));
             var total = await query.CountAsync();
             if (offset > int.MaxValue) return Results.Ok(new WorkOrderSourceListResponse([], currentPage, size, total));
             var rows = await query.OrderBy(item => item.contract.CustomerLegalNameSnapshot).ThenBy(item => item.quote.Number).ThenBy(item => item.contract.Id)
@@ -66,7 +66,7 @@ public static class WorkOrderSourceEndpoints
         IReadOnlyList<WorkOrderSourceItemResponse> items;
         if (type == WorkOrderSourceType.Quote)
         {
-            row = await db.Quotes.AsNoTracking().Where(item => item.Id == id && item.OrganizationId == organizationId)
+            row = await db.Quotes.AsNoTracking().Where(item => item.Id == id && item.OrganizationId == organizationId && item.Status == QuoteStatus.Approved)
                 .Select(item => new SourceRow(item.Id, type, item.Id, null, item.Number, item.CustomerLegalNameSnapshot, item.ServiceAddressSnapshot, item.Status.ToString(), item.Items.Count))
                 .SingleOrDefaultAsync();
             if (row is null) return Results.NotFound();
@@ -77,7 +77,7 @@ public static class WorkOrderSourceEndpoints
         {
             row = await (from contract in db.Contracts.AsNoTracking()
                          join quote in db.Quotes.AsNoTracking() on contract.QuoteId equals quote.Id
-                         where contract.Id == id && contract.OrganizationId == organizationId && quote.OrganizationId == organizationId
+                         where contract.Id == id && contract.OrganizationId == organizationId && quote.OrganizationId == organizationId && contract.Status == ContractStatus.Active
                          select new SourceRow(contract.Id, type, quote.Id, contract.Id, quote.Number, contract.CustomerLegalNameSnapshot, quote.ServiceAddressSnapshot, contract.Status.ToString(), contract.Items.Count)).SingleOrDefaultAsync();
             if (row is null) return Results.NotFound();
             items = await db.ContractItems.AsNoTracking().Where(item => item.ContractId == id)
