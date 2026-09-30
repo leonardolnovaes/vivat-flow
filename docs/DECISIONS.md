@@ -120,3 +120,8 @@ Lightweight ADR log. Earlier entries remain useful history; later entries explic
 
 **Decision:** Quote approval does not automatically create or activate a Contract. An authorized user explicitly creates a Draft Contract from an approved Quote; inherited commercial scope is read-only and formalization metadata is separate.  
 **Why:** Approval and formal contractual activation are distinct business events, and some future workflows may execute without requiring a Contract.
+
+## ADR-024 — Explicit Work Order execution boundary
+
+**Decision:** Management explicitly creates one current Work Order for the complete scope of an approved Quote without a governing Draft or Active Contract, or an Active Contract. The Work Order copies historical operational item and service-address snapshots, excludes commercial values from operational responses, and uses tenant-scoped numbers. ADMIN and MANAGER control planning and closure; assigned USER may only read and execute their own work. Execution completion enters AwaitingClosure; management closes it separately. Delivery remains independent.
+**Why:** Commercial approval, formalization, operational execution, and management acceptance have distinct ownership and privacy needs. Cancellation permits replacement without rewriting history.

@@ -11,6 +11,7 @@ using Tsdt.Api.Services;
 using Tsdt.Api.Quotes;
 using Tsdt.Api.Platform;
 using Tsdt.Api.Contracts;
+using Tsdt.Api.WorkOrders;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -65,6 +66,8 @@ builder.Services.AddAntiforgery(options =>
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(AuthorizationPolicies.CommercialAdmin, policy => policy.RequireRole(IdentityRoles.Admin));
+    options.AddPolicy(AuthorizationPolicies.WorkOrderManagement, policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager).RequireAssertion(context => context.User.FindFirst("platform_administrator")?.Value != "true"));
+    options.AddPolicy(AuthorizationPolicies.WorkOrderExecution, policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager, IdentityRoles.User).RequireAssertion(context => context.User.FindFirst("platform_administrator")?.Value != "true"));
     options.AddPolicy(AuthorizationPolicies.PlatformAdministrator, policy => policy.RequireClaim("platform_administrator", "true"));
 });
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
@@ -346,6 +349,7 @@ app.MapCustomerEndpoints();
 app.MapServiceEndpoints();
 app.MapQuoteEndpoints();
 app.MapContractEndpoints();
+app.MapWorkOrderEndpoints();
 app.MapPlatformOrganizationEndpoints();
 app.MapServiceLineEndpoints();
 

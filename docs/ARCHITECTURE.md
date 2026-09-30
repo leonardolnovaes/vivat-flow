@@ -27,7 +27,7 @@ See [PRODUCT_MODEL.md](PRODUCT_MODEL.md) for canonical domain boundaries.
 | Service Lines | global lines and Organization enablement |
 | Quotes | commercial proposals, items, approval lifecycle, assignment/visits |
 | Contracts | explicit formalization of approved Quotes and immutable commercial scope |
-| Work Orders | future execution, assignments, dates, operational status |
+| Work Orders | explicit execution, assignment, schedule, operational status, and audit |
 | Documents | future document metadata, context, versions, storage references |
 | Deliveries | future delivery records and evidence |
 | Dashboard | future operational projections/actionable lists |
@@ -61,7 +61,7 @@ Contracts represent explicit formalization after approval: what was contracted, 
 
 Approval does not auto-create a Contract. Contract creation is an explicit user action. Contract scope is inherited from the approved Quote and is not silently editable.
 
-Work Orders are a separate future execution boundary and must not be folded into Contracts merely for convenience.
+Work Orders are a separate execution boundary. They may originate explicitly from an approved Quote or Active Contract and retain operational snapshots without exposing commercial values.
 
 ## Backend and data
 
