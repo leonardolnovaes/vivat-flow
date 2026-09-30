@@ -101,3 +101,27 @@ main:has(.quote-summary) .table-wrap tbody td:nth-child(3), main:has(.quote-summ
 @media (max-width: 560px) { .auth-page { padding: 1rem; }.auth-language-selector { top: .75rem; right: .75rem; }.app-content { padding-left: 1rem; padding-right: 1rem; }.card { padding: 1rem; }.filters { grid-template-columns: 1fr; }.filters button { grid-column: auto; width: 100%; }.pagination { justify-content: flex-start; flex-wrap: wrap; }.modal-backdrop { padding: .5rem; }.modal { max-height: calc(100vh - 1rem); } }
 @media (max-width: 560px) { .quote-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }.quote-toolbar-main,.quote-toolbar-extra { grid-template-columns:1fr; }.quote-toolbar-main > button { width:100%; }.quote-table { display:none; }.quote-mobile-list { display:grid; gap:.65rem; padding:0 1rem 1rem; }.quote-mobile-list article { display:grid; gap:.45rem; padding:.8rem; border:1px solid #e1e8f0; border-radius:.6rem; background:#fbfdff; }.quote-mobile-list article > div { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }.quote-mobile-list p { margin:0; }.quote-mobile-list small { color:#526176; }.quote-mobile-list button { justify-self:start; }.quote-detail-header { align-items:stretch; flex-direction:column; }.quote-detail-header .quote-status { align-self:flex-start; }.quote-definition { grid-template-columns:1fr; gap:.18rem; }.quote-definition dd { margin-bottom:.5rem; } }
 @media (max-width: 760px) { .quote-customer-row { display: grid; grid-column: auto; gap: 1rem; }.quick-customer { width: 100%; min-width: 0; }.quote-form-actions { justify-content: stretch; }.quote-form-actions button { flex: 1; } }
+.contract-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.25rem; }
+.contract-toolbar label { min-width: 12rem; }
+.contract-results { padding: 0; overflow: hidden; }
+.contract-results .section-heading { padding: 1rem 1.2rem 0; }
+.contract-table { border: 0; border-radius: 0; }
+.contract-table table { min-width: 61rem; }
+.contract-mobile-list { display: none; }
+.contract-status { display: inline-flex; padding: .2rem .55rem; border-radius: 999px; font-size: .76rem; font-weight: 800; }
+.contract-status-Draft { color: #46566d; background: #e9eef4; }
+.contract-status-Active { color: #166534; background: #dcfce7; }
+.contract-status-Ended { color: #5b6472; background: #eceff3; }
+.contract-status-Cancelled { color: #991b1b; background: #fee2e2; }
+.contract-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin: 0 0 1.25rem; }
+.contract-detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, 23rem); gap: 1.25rem; align-items: start; }
+.contract-info { display: grid; gap: 1.2rem; }
+.contract-definition { display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: .5rem 1rem; margin: 0; }
+.contract-services { display: grid; gap: .55rem; margin-top: 1rem; }
+.contract-service { display: grid; gap: .18rem; padding: .7rem .8rem; border: 1px solid #e1e8f0; border-radius: .5rem; background: #fbfdff; }
+.contract-service small, .contract-action-hint { color: #526176; }
+.contract-form { width: min(100%, 54rem); margin-top: 1.25rem; }
+.contract-form form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.contract-form form > label:nth-of-type(3), .contract-form form > label:nth-of-type(4), .contract-form .actions { grid-column: 1 / -1; }
+@media (max-width: 1050px) { .contract-detail-layout { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .contract-table { display: none; } .contract-mobile-list { display: grid; gap: .65rem; padding: 0 1rem 1rem; } .contract-mobile-list article { display: grid; gap: .45rem; padding: .8rem; border: 1px solid #e1e8f0; border-radius: .6rem; background: #fbfdff; } .contract-mobile-list article > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: .5rem; } .contract-mobile-list p { margin: 0; } .contract-mobile-list small { color: #526176; } .contract-detail-header { align-items: stretch; flex-direction: column; } .contract-definition { grid-template-columns: 1fr; gap: .18rem; } .contract-definition dd { margin-bottom: .5rem; } .contract-form form { grid-template-columns: 1fr; } .contract-form form > label:nth-of-type(3), .contract-form form > label:nth-of-type(4), .contract-form .actions { grid-column: auto; } }
