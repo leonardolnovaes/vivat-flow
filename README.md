@@ -28,7 +28,7 @@ DEV and DEMO are isolated. Standard DEV uses:
 - Health: `https://localhost:7227/health`
 - Database: `vivatflow_dev`
 
-See [Development setup](docs/SETUP.md) for the complete local workflow.
+See [Development setup](docs/SETUP.md) and the canonical [runtime environment contract](docs/ENVIRONMENTS.md) for the complete local workflow.
 
 ## Documentation
 
@@ -38,4 +38,5 @@ See [Development setup](docs/SETUP.md) for the complete local workflow.
 - [Architecture decisions](docs/DECISIONS.md)
 - [Frontend standards](docs/FRONTEND_STANDARDS.md)
 - [Development setup](docs/SETUP.md)
+- [Runtime environments](docs/ENVIRONMENTS.md)
 - [Contributor/agent instructions](AGENTS.md)

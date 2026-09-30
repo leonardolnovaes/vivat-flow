@@ -116,14 +116,4 @@ Normal AI-assisted validation may execute only targeted unit tests plus proporti
 
 ## Runtime environments
 
-DEMO and DEV are separate application environments. They may share the PostgreSQL server but never the same logical database.
-
-Standard DEV:
-
-- frontend `5175`
-- API `7227`
-- database `vivatflow_dev`
-
-The historical DEMO database is `tsdt`. Ordinary development must not restart, migrate, reset, or mutate DEMO.
-
-See [SETUP.md](SETUP.md).
+DEV, DEMO, and PREVIEW have distinct lifecycle and persistence guarantees. See the canonical [ENVIRONMENTS.md](ENVIRONMENTS.md) contract.
