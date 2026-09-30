@@ -1,2 +1,2 @@
 namespace Tsdt.Api.Identity;
-public static class AuthorizationPolicies { public const string CommercialAdmin = "CommercialAdmin"; public const string PlatformAdministrator = "PlatformAdministrator"; }
+public static class AuthorizationPolicies { public const string CommercialAdmin = "CommercialAdmin"; public const string PlatformAdministrator = "PlatformAdministrator"; public const string WorkOrderManagement = "WorkOrderManagement"; public const string WorkOrderExecution = "WorkOrderExecution"; }

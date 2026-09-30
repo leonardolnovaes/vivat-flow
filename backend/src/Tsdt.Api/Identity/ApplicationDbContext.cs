@@ -6,6 +6,7 @@ using Tsdt.Api.Services;
 using Tsdt.Api.Quotes;
 using Tsdt.Api.Platform;
 using Tsdt.Api.Contracts;
+using Tsdt.Api.WorkOrders;
 
 namespace Tsdt.Api.Identity;
 
@@ -28,6 +29,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<ContractItem> ContractItems => Set<ContractItem>();
     public DbSet<ContractAuditRecord> ContractAuditRecords => Set<ContractAuditRecord>();
+    public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+    public DbSet<WorkOrderItem> WorkOrderItems => Set<WorkOrderItem>();
+    public DbSet<WorkOrderAuditRecord> WorkOrderAuditRecords => Set<WorkOrderAuditRecord>();
+    public DbSet<WorkOrderNumberCounter> WorkOrderNumberCounters => Set<WorkOrderNumberCounter>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationAuditRecord> OrganizationAuditRecords => Set<OrganizationAuditRecord>();
     public DbSet<ServiceLine> ServiceLines => Set<ServiceLine>();
@@ -188,6 +193,47 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasOne<Service>().WithMany().HasForeignKey(item => item.ServiceId).OnDelete(DeleteBehavior.Restrict);
         });
         builder.Entity<ContractAuditRecord>(entity => { entity.ToTable("ContractAuditRecords"); entity.HasKey(record => record.Id); entity.Property(record => record.ActorUserId).IsRequired(); entity.Property(record => record.Action).IsRequired().HasMaxLength(80); entity.Property(record => record.ChangedFields).HasMaxLength(500); entity.HasIndex(record => new { record.ContractId, record.OccurredAtUtc }); entity.HasOne(record => record.Contract).WithMany().HasForeignKey(record => record.ContractId).OnDelete(DeleteBehavior.Restrict); });
+        builder.Entity<WorkOrder>(entity =>
+        {
+            entity.ToTable("WorkOrders", table => table.HasCheckConstraint("CK_WorkOrders_Source", "(\"SourceType\" = 'Quote' AND \"ContractId\" IS NULL) OR (\"SourceType\" = 'Contract' AND \"ContractId\" IS NOT NULL)"));
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Number).IsRequired().HasMaxLength(16);
+            entity.Property(item => item.SourceType).HasConversion<string>().HasMaxLength(16);
+            entity.Property(item => item.Status).HasConversion<string>().HasMaxLength(24);
+            entity.Property(item => item.CustomerLegalNameSnapshot).IsRequired().HasMaxLength(200);
+            entity.Property(item => item.ServiceAddressSnapshot).IsRequired().HasMaxLength(700);
+            entity.Property(item => item.AssignedUserNameSnapshot).HasMaxLength(120);
+            entity.Property(item => item.AssignedUserEmailSnapshot).HasMaxLength(254);
+            entity.Property(item => item.OperationalNotes).HasMaxLength(2000);
+            entity.Property(item => item.CompletionNotes).HasMaxLength(2000);
+            entity.Property(item => item.CreatedByUserId).IsRequired(); entity.Property(item => item.UpdatedByUserId).IsRequired();
+            entity.Property(item => item.Version).IsConcurrencyToken();
+            entity.HasIndex(item => new { item.OrganizationId, item.Number }).IsUnique();
+            entity.HasIndex(item => new { item.OrganizationId, item.QuoteId }).IsUnique().HasFilter("\"Status\" <> 'Cancelled'");
+            entity.HasIndex(item => new { item.OrganizationId, item.ContractId }).HasFilter("\"ContractId\" IS NOT NULL");
+            entity.HasIndex(item => new { item.OrganizationId, item.Status, item.UpdatedAtUtc });
+            entity.HasIndex(item => new { item.OrganizationId, item.AssignedUserId, item.UpdatedAtUtc });
+            entity.HasIndex(item => new { item.OrganizationId, item.UpdatedAtUtc, item.Id });
+            entity.HasOne<Organization>().WithMany().HasForeignKey(item => item.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Quote>().WithMany().HasForeignKey(item => item.QuoteId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Contract>().WithMany().HasForeignKey(item => item.ContractId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Customer>().WithMany().HasForeignKey(item => item.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.AssignedUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(item => TenantOrganizationId == null || item.OrganizationId == TenantOrganizationId);
+        });
+        builder.Entity<WorkOrderItem>(entity =>
+        {
+            entity.ToTable("WorkOrderItems"); entity.HasKey(item => item.Id);
+            entity.Property(item => item.ServiceCodeSnapshot).IsRequired().HasMaxLength(50); entity.Property(item => item.ServiceNameSnapshot).IsRequired().HasMaxLength(160);
+            entity.Property(item => item.ServiceLineCodeSnapshot).IsRequired().HasMaxLength(50); entity.Property(item => item.ServiceLineNameSnapshot).IsRequired().HasMaxLength(160);
+            entity.HasIndex(item => new { item.WorkOrderId, item.DisplayOrder }).IsUnique();
+            entity.HasOne(item => item.WorkOrder).WithMany(order => order.Items).HasForeignKey(item => item.WorkOrderId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<QuoteItem>().WithMany().HasForeignKey(item => item.QuoteItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ContractItem>().WithMany().HasForeignKey(item => item.ContractItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Service>().WithMany().HasForeignKey(item => item.ServiceId).OnDelete(DeleteBehavior.Restrict);
+        });
+        builder.Entity<WorkOrderAuditRecord>(entity => { entity.ToTable("WorkOrderAuditRecords"); entity.HasKey(item => item.Id); entity.Property(item => item.ActorUserId).IsRequired(); entity.Property(item => item.Action).IsRequired().HasMaxLength(80); entity.Property(item => item.ChangedFields).HasMaxLength(500); entity.HasIndex(item => new { item.WorkOrderId, item.OccurredAtUtc }); entity.HasOne(item => item.WorkOrder).WithMany().HasForeignKey(item => item.WorkOrderId).OnDelete(DeleteBehavior.Restrict); });
+        builder.Entity<WorkOrderNumberCounter>(entity => { entity.ToTable("WorkOrderNumberCounters", table => table.HasCheckConstraint("CK_WorkOrderNumberCounters_Range", "\"LastNumber\" >= 1 AND \"LastNumber\" <= 999999")); entity.HasKey(item => new { item.OrganizationId, item.Year }); entity.HasOne<Organization>().WithMany().HasForeignKey(item => item.OrganizationId).OnDelete(DeleteBehavior.Restrict); });
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -203,6 +249,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         ApplyOwnership(ChangeTracker.Entries<Service>(), organizationId, service => service.OrganizationId, (service, value) => service.OrganizationId = value);
         ApplyOwnership(ChangeTracker.Entries<Quote>(), organizationId, quote => quote.OrganizationId, (quote, value) => quote.OrganizationId = value);
         ApplyOwnership(ChangeTracker.Entries<Contract>(), organizationId, contract => contract.OrganizationId, (contract, value) => contract.OrganizationId = value);
+        ApplyOwnership(ChangeTracker.Entries<WorkOrder>(), organizationId, order => order.OrganizationId, (order, value) => order.OrganizationId = value);
     }
 
     private static void ApplyOwnership<TEntity>(IEnumerable<Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TEntity>> entries, Guid organizationId, Func<TEntity, Guid> getOrganizationId, Action<TEntity, Guid> setOrganizationId) where TEntity : class

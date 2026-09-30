@@ -71,17 +71,11 @@ Activation requires a start date. Invalid backward or repeated transitions are r
 
 ## Work Orders and execution
 
-Work Orders are a future execution boundary and must remain separate from Quote/Contract commercial formalization.
+Work Orders are the explicit execution boundary, separate from Quote and Contract commercial formalization. One Work Order covers the complete source scope. Management creates it from an approved Quote without a governing Draft or Active Contract, or from an Active Contract. Approval, formalization, and activation never create one automatically. A cancelled Work Order may be replaced; a non-cancelled Work Order prevents another for the same originating Quote scope.
 
-Do not implement "direct execution from Quote" or recurring execution as an incidental Contract feature. Those decisions belong to the Work Orders architecture.
+Work Orders snapshot the originating Quote's service address and operational item scope from Quote items or Contract items. Operational responses exclude prices and payment terms. The lifecycle is Draft, Scheduled, InProgress, AwaitingClosure, Closed, or Cancelled. Execution completion means the assigned professional finished work; management closure is a separate acceptance action. Delivery remains independent.
 
-The intended authorization direction is phase-aware:
-
-- commercial/management phases are restricted to management;
-- execution exposes only the operational scope needed by assigned users;
-- receipt/closure returns to management control.
-
-Exact policies must be implemented deliberately per module.
+ADMIN and MANAGER manage tenant Work Orders and may perform execution actions. USER can see only assigned Work Orders and may start or complete their own work. Platform Administrators have no Work Order access. Recurrence, partial execution, and multiple assignees are outside this MVP.
 
 ## Historical integrity
 

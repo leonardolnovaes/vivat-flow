@@ -34,7 +34,7 @@ Commercial values may exist, but the initial operational MVP does not implement 
 
 ## Execution flow
 
-Work Orders will own execution-specific state: assignment, dates, operational progress, pending items, and notes.
+Work Orders own execution-specific state: assignment, dates, operational progress, and notes. Management creates a Work Order explicitly from an approved Quote or Active Contract. Operational completion and management closure are separate transitions; Delivery remains independent.
 
 Do not collapse Work Orders into Quote or Contract merely to accelerate implementation. Commercial formalization and operational execution are separate boundaries.
 
