@@ -24,13 +24,13 @@ DEMO is the persistent client-facing environment. Its data is valuable and survi
 - Database: `tsdt`
 - Command: `./scripts/start-demo.ps1 -Ref main`
 
-`-Ref` resolves a committed revision. The script runs it from the persistent local worktree at `.local/demo/worktree`, rather than from the active DEV working tree. The deployed SHA is recorded at `.local/demo/deployed-sha.txt` only after health and unauthenticated-authentication checks succeed.
+`-Ref` resolves a committed revision. For the canonical `-Ref main` command, the script refreshes and deploys `origin/main`; other refs resolve locally as explicitly supplied. The script runs the revision from the persistent local worktree at `.local/demo/worktree`, rather than from the active DEV working tree. When the revision changes, it stops the owned DEMO frontend/API before changing that worktree. The deployed SHA is recorded at `.local/demo/deployed-sha.txt` only after both services and the unauthenticated-authentication check succeed.
 
 The DEMO command starts the existing PostgreSQL Compose service with `--no-recreate`, verifies that `tsdt` already exists, and fails closed if it does not. It never creates, truncates, resets, reseeds, or replaces that database. Bootstrap settings are forwarded only when already configured locally; the application bootstrapper is idempotent and does not overwrite existing users.
 
 Before an update, the script compares source migration IDs with `__EFMigrationsHistory`. If any are pending, it creates a PostgreSQL custom-format backup under `.local/demo/backups` before the API starts and applies migrations. The API applies only its normal EF migrations; operators must review migrations with destructive or uncertain impact before explicitly deploying their revision to DEMO.
 
-Use `./scripts/start-demo.ps1 -Stop` to stop only DEMO frontend/API processes. It leaves PostgreSQL, the persistent worktree, backups, and DEMO data intact.
+Use `./scripts/start-demo.ps1 -Stop` to stop only DEMO frontend/API processes. It leaves PostgreSQL, the persistent worktree, backups, and DEMO data intact. `-BackendOnly` and `-FrontendOnly` are maintenance operations allowed only when the requested SHA is already deployed; a changed revision always requires a full-stack deployment.
 
 ## PREVIEW
 

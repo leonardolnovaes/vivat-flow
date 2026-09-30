@@ -116,8 +116,23 @@ function Confirm-DemoDatabase([string]$ContainerId, [hashtable]$LocalValues) {
 }
 
 function Get-Commit([string]$Revision) {
-    $commit = (@(& git -C $repositoryRoot rev-parse --verify "$Revision^{commit}") -join '').Trim()
+    $resolvedRevision = $Revision
+    if ($Revision -eq 'main') {
+        & git -C $repositoryRoot fetch --quiet origin '+refs/heads/main:refs/remotes/origin/main'
+        if ($LASTEXITCODE -ne 0) { throw 'Could not refresh origin/main for the canonical DEMO deployment.' }
+        $resolvedRevision = 'origin/main'
+    }
+    $commit = (@(& git -C $repositoryRoot rev-parse --verify "$resolvedRevision^{commit}") -join '').Trim()
     if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw "Could not resolve '$Revision' to a commit." }
+    return $commit
+}
+
+function Get-DemoWorktreeCommit {
+    if (-not (Test-Path $demoWorktree)) { return $null }
+    $worktreeGitDirectory = Join-Path $demoWorktree '.git'
+    if (-not (Test-Path $worktreeGitDirectory)) { throw "DEMO worktree path exists but is not a Git worktree: $demoWorktree" }
+    $commit = (@(& git -C $demoWorktree rev-parse HEAD) -join '').Trim()
+    if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw 'Could not determine the current DEMO worktree commit.' }
     return $commit
 }
 
@@ -237,6 +252,9 @@ if ($Stop) { Stop-DemoEnvironment; return }
 
 $commit = Get-Commit $Ref
 $previousCommit = if (Test-Path $deployedShaFile) { (Get-Content -Raw $deployedShaFile).Trim() } else { $null }
+$currentDemoWorktreeCommit = Get-DemoWorktreeCommit
+$deploymentChanged = $currentDemoWorktreeCommit -ne $commit -or $previousCommit -ne $commit
+if (($BackendOnly -or $FrontendOnly) -and $previousCommit -ne $commit) { throw 'Partial DEMO service operations are only allowed for the already-deployed commit. Run a full deployment when the requested revision changes.' }
 $developmentCommit = (@(& git -C $repositoryRoot rev-parse --short HEAD) -join '').Trim()
 $developmentChanges = @(& git -C $repositoryRoot status --porcelain)
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the active DEV working tree.' }
@@ -247,9 +265,8 @@ $localValues = Read-LocalEnvironment
 Start-SharedPostgres
 $postgresContainerId = Get-PostgresContainerId
 Confirm-DemoDatabase $postgresContainerId $localValues
+if ($deploymentChanged) { Stop-DemoEnvironment }
 Ensure-DemoWorktree $commit
-$deploymentChanged = $previousCommit -ne $commit
-if ($deploymentChanged) { $Restart = $true }
 $pendingMigrations = Get-PendingMigrations $postgresContainerId $localValues
 if ($pendingMigrations.Count -gt 0) { Backup-DemoDatabase $postgresContainerId $localValues $pendingMigrations }
 Restore-DemoDependencies
@@ -258,5 +275,7 @@ if (-not $FrontendOnly) { Ensure-DemoService 'Backend' $backendHttpsPort $localV
 if (-not $BackendOnly) { Ensure-DemoService 'Frontend' $frontendPort $localValues }
 
 if (-not $FrontendOnly -and (Get-HttpStatus "https://localhost:$backendHttpsPort/api/auth/me" -Insecure) -ne '401') { throw 'DEMO authentication endpoint did not return the expected unauthenticated response.' }
-Set-Content -Path $deployedShaFile -Value $commit -Encoding UTF8
-Write-Host "DEMO deployed commit: $commit"
+if (-not $BackendOnly -and -not $FrontendOnly) {
+    Set-Content -Path $deployedShaFile -Value $commit -Encoding UTF8
+    Write-Host "DEMO deployed commit: $commit"
+}
