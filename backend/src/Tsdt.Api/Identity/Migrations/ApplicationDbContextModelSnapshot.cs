@@ -812,6 +812,19 @@ namespace Tsdt.Api.Identity.Migrations
                     b.Property<Guid>("ServiceId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ServiceLineCodeSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<Guid>("ServiceLineIdSnapshot")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ServiceLineNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
                     b.Property<string>("ServiceNameSnapshot")
                         .IsRequired()
                         .HasMaxLength(160)
