@@ -14,7 +14,7 @@
 
 ## Git workflow and review gate
 
-`main` is the stable integration branch. Agents must not implement meaningful changes directly on `main`, must not push feature work to `main`, and must never merge a pull request without explicit user authorization.
+`main` is the stable integration branch. Agents must not implement meaningful changes directly on `main`, must not push feature work to `main`, and must never merge a pull request. The user is always the final reviewer and performs the merge manually.
 
 ### Branch creation
 
@@ -71,14 +71,14 @@ Then stop. Do not merge the pull request.
 ### Review and merge gate
 
 - A pull request is not ready for `main` merely because implementation and automated validation succeeded.
-- The expected gate is: implementation complete -> pull request opened -> ChatGPT code review -> requested corrections resolved -> user manual QA when applicable -> explicit user authorization to merge.
+- The expected gate is: implementation complete -> pull request opened -> ChatGPT code review -> requested corrections resolved -> user manual QA when applicable -> user final review -> user performs the merge manually.
 - Treat review findings as:
   - `BLOCKER`: must be fixed before merge.
   - `NON-BLOCKING`: valid improvement that does not block the current delivery.
   - `CLEAN`: no relevant issue found in the reviewed scope.
 - If review returns a blocker, fix it on the same branch, commit, push, and report the new commit SHA and the existing pull request number for re-review.
 - Agents must not approve their own work as a substitute for the designated review gate.
-- Agents must never merge, squash-merge, rebase-merge, close, or otherwise finalize the pull request unless the user explicitly authorizes that action after review and required QA.
+- Agents must never merge, squash-merge, rebase-merge, close, or otherwise finalize a pull request. This remains true even if the user says the change is approved or ready: approval means the agent must stop and hand control back to the user, who performs the merge manually.
 
 ## Reuse-first engineering
 
