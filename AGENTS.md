@@ -8,7 +8,7 @@
 - Do not add sensitive personal or medical data without an explicit requirement.
 - Avoid broad unrelated refactors and unnecessary dependencies.
 - Explain important architecture changes before implementing them.
-- When code exists, run relevant tests.
+- When repository code changes, run only the validation allowed by the `Execution and validation discipline` section below; do not broaden test scope beyond those rules.
 - Follow the Git workflow and review gate below for branch, commit, push, pull request, review, and merge behavior.
 - All new frontend screens and meaningful frontend changes must follow `docs/FRONTEND_STANDARDS.md`; UI work is not complete until its running-screen visual/manual QA gate passes.
 
@@ -108,23 +108,25 @@ TSDT ERP is the repository source of truth and the reference implementation for 
 
 ## Execution and validation discipline
 
-- During normal AI-assisted development, automatically execute only unit tests. Static checks, compilation/build, and linting remain part of normal validation.
+- During normal AI-assisted development, automatically execute only targeted unit tests relevant to the changed scope. Static checks, compilation/build, and linting are allowed when they are proportionate to the change.
+- **Never execute `./scripts/validate.ps1` automatically.** Canonical validation is opt-in and may run only when the user explicitly requests it.
 - The AI may create, modify, refactor, and review E2E, integration, smoke, regression, performance, and other non-unit tests, but must not execute them automatically. Creating or changing such a test does not grant execution permission.
 - Non-unit suites are run separately by a developer/team or dedicated CI/CD pipeline. When the AI changes a non-unit test, report its coverage, the manual command to run it, and explicitly that it was not executed.
-- Classify backend tests with xUnit `Trait("Category", "Unit")` or `Trait("Category", "Integration")`. Tests without a `Unit` category are excluded from the AI's default validation command.
+- Classify backend tests with xUnit `Trait("Category", "Unit")` or `Trait("Category", "Integration")`. Tests without a `Unit` category are excluded from the AI's normal automated test scope.
 - Before editing, inspect only the files needed to resolve the task, reuse established repository patterns, and identify the exact files expected to change.
 - Do not perform open-ended repository hardening, opportunistic refactoring, or unrelated improvements. Report out-of-scope findings instead.
-- During implementation, use the smallest permitted validation that proves the current change. Do not run non-unit suites automatically.
+- During implementation, use the smallest permitted validation that proves the current change. Do not escalate from targeted checks to repository-wide validation without an explicit reason and user authorization when required.
 - Prefer a single blocking command with an appropriate timeout over polling a running process. When a command already blocks until completion, wait for its result; do not poll logs or process state with `Start-Sleep`, `Get-Content`, `Get-Process`, or repeated status commands. Inspect logs only after completion or when investigating a genuine timeout or failure.
 - When validation fails, diagnose the specific failure before rerunning it. Do not rerun an unchanged failing command unless the failure is known to be transient, and do not escalate a targeted failure to repository-wide testing without cause.
-- Run the canonical `./scripts/validate.ps1` validation once after implementation is stable. It runs only unit tests, build, and lint. PostgreSQL and Playwright validation are manual/CI responsibilities unless the user explicitly directs their execution.
 - Stop once the requested implementation and required acceptance gates pass. Report optional findings or remaining risks without beginning another review, hardening, cleanup, optimization, or validation cycle.
 
 ### Cost-aware validation / fast feedback
 
 The default AI validation proceeds through permitted checks only:
 
-cheap/static checks -> targeted unit tests -> canonical validation once.
+cheap/static checks -> targeted unit tests -> proportional build/lint/static validation.
+
+`./scripts/validate.ps1` is excluded from the default flow and runs only when the user explicitly requests canonical validation.
 
 #### 1. Static/preflight first
 
@@ -136,17 +138,21 @@ Before running builds or unit tests:
 
 Do not launch an expensive test runner to discover basic spelling, locator, or selector problems that can be found statically.
 
-#### 2. Canonical validation is a gate, not a development loop
+#### 2. Canonical validation is opt-in only
 
-The canonical repository validation is `./scripts/validate.ps1`.
+The canonical repository validation is `./scripts/validate.ps1`, but it is **not** part of the default AI development loop.
 
-Use targeted checks during implementation. Run the canonical validation when the implementation is believed complete. Do not repeatedly execute `validate.ps1` between small edits.
+- Do not run it because a task is complete.
+- Do not run it because a pull request is about to be opened.
+- Do not run it after review fixes unless the user explicitly requests it.
+- If the user explicitly requests canonical validation, run it at most once after the implementation is stable unless a concrete failure requires a justified rerun.
 
-#### 3. After canonical validation passes
+#### 3. Proportional validation after changes
 
-If `validate.ps1` has already passed and subsequent changes affect only non-unit test files, selectors, assertions, test synchronization, or test-only helpers, do not rerun it. Report the affected manual/CI command instead.
-
-If production frontend code changes, run the minimum relevant frontend lint/build check. If backend production code or contracts change, run the relevant backend tests before the final canonical gate.
+- If production frontend code changes, run the minimum relevant frontend lint/build/static check.
+- If backend production code or contracts change, run the relevant targeted backend unit tests and the minimum build/static check needed for confidence.
+- If only documentation changes, runtime validation is not required.
+- If only non-unit test files, selectors, assertions, synchronization, or test-only helpers change, do not execute the non-unit suite automatically; report the affected manual/CI command instead.
 
 #### 4. Batch fixes
 
@@ -174,8 +180,9 @@ This allows the project to identify validation waste.
 - VS Code is the standard IDE/editor for this repository. Do not launch, invoke, depend on, or use Visual Studio or the Visual Studio Just-In-Time Debugger.
 - Run .NET applications, tests, migrations, and tooling through the `dotnet` CLI.
 - If a `dotnet` process crashes, capture and investigate the terminal exception or stack trace. Use VS Code-compatible debugging if needed; never attach or launch Visual Studio.
-- Use `.\scripts\validate.ps1` for normal backend Release build, backend tests, frontend lint, and frontend production build. It uses restored NuGet assets without contacting package sources and keeps validation output separate from running APIs.
-- If backend assets are missing or dependencies changed, explicitly run `.\scripts\restore.ps1` once, then rerun validation. Do not improvise raw `dotnet restore/build/test/run`, omit `--no-restore` or `--no-build`, or repeatedly retry a failing package source.
+- Use targeted `dotnet` build/test commands for the backend when they are the smallest permitted validation for the task. Prefer `--no-restore` when restored assets are current; use `--no-build` only when the required output is known to be current.
+- Run `.\scripts\validate.ps1` only when the user explicitly requests canonical validation. It remains the canonical combined Release build + unit-test + frontend lint/build runner, but it is not an automatic completion gate.
+- If backend assets are missing or dependencies changed, explicitly run `.\scripts\restore.ps1` once, then rerun only the targeted validation needed for the task (or the canonical runner if the user explicitly requested it). Do not repeatedly retry a failing package source.
 
 ## Local application runtime
 
