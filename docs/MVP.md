@@ -1,65 +1,91 @@
-# MVP 1
+# Vivat Flow MVP scope
 
-## Problem and objective
+## Objective
 
-SST companies frequently lose visibility between customer request, quote, approval, execution, document completion, and delivery because work is spread across spreadsheets and folders. MVP 1 is the operational system of record for this path and must make completed work awaiting delivery impossible to overlook.
+Vivat Flow is the operational system of record for service companies, covering the journey from tenant setup and customer registration through commercial proposal, formalization, future execution, documents, delivery, and operational visibility.
 
-TSDT ERP is reusable for Brazilian SST companies; CDS – Treinamento e Segurança do Trabalho is pilot context only.
+The product CORE is generic. SST/TST is the first vertical and CDS is the first pilot context, but neither defines the core data model.
 
-## Modules in scope
+## Core modules
 
-1. Authentication and Administration
-2. Customers
-3. Service Catalog
-4. Quotes
-5. Contracts (basic)
-6. Service Orders
-7. Documents
-8. Deliveries
-9. Dashboard
-10. Audit
+1. Authentication and tenant user administration
+2. Control Plane and Organizations
+3. Customers, contacts, and units
+4. Service Lines and Service Catalog
+5. Quotes, commercial approval, assignment, and visits
+6. Contracts
+7. Work Orders
+8. Documents
+9. Deliveries
+10. Dashboard
+11. Audit
 
-Authentication includes login/logout, no public registration, ADMIN-only user creation, activation/deactivation, and ADMIN/MANAGER/USER roles. Backend authorization is required.
+## Commercial flow
 
-Customers hold company details, CNPJ, names, contacts, units, status, and notes. Services are configurable catalog data; behavior must not depend on service names.
+A Customer may receive a Quote containing multiple Services, including Services from different Service Lines.
 
-Quotes belong to customers, have multiple items, and follow `DRAFT → SENT → APPROVED`, or `REJECTED` / `CANCELLED`. Approved quotes may create one or more service orders. Basic contracts hold customer, dates, status, optional monthly value, notes, and covered services; they may create many orders but do not provide recurring billing.
+The commercial journey is conceptually:
 
-Service Orders own customer/unit, quote-or-contract origin, service items, responsible users, dates, pending items, notes, and operational status: `PENDING`, `IN_PROGRESS`, `WAITING_CUSTOMER`, `COMPLETED`, or `CANCELLED`.
+`Customer → Quote → Approval → optional Contract formalization → future execution`
 
-Documents always have customer and service-order context, and may have service-order-item context. They include metadata, delivery intent (customer deliverable or internal/supporting), and support future versioning. Deliveries separately record service order, the one or more documents actually delivered, date, method (`EMAIL`, `WHATSAPP`, `IN_PERSON`, `PORTAL`, `MAIL`, `OTHER`), recipient, user, notes, and optional evidence. Not every attached document must be delivered.
+A Contract is never auto-created by approval. Contract scope comes from the approved Quote and remains historically stable.
 
-The dashboard prioritizes actionable lists/counters: in progress, overdue, waiting for customer, completed awaiting delivery, and recently delivered. Audit captures who did what to which entity and when for important actions.
+Commercial values may exist, but the initial operational MVP does not implement receivables, banking, invoicing, or a full billing engine.
 
-## Primary flows
+## Execution flow
 
-One-time work: `Customer → Quote → Approved → Service Order → Execution → Document Ready → Delivery Registered → Completed`.
+Work Orders will own execution-specific state: assignment, dates, operational progress, pending items, and notes.
 
-Recurring work: `Customer → Recurring Contract → one or more Service Orders → Execution → Document → Delivery`.
+Do not collapse Work Orders into Quote or Contract merely to accelerate implementation. Commercial formalization and operational execution are separate boundaries.
 
-A Service Order has either an approved-quote or contract origin. Operational completion and delivery are separate: completed work can still have delivery pending.
+The intended permission direction is phase-aware: management owns commercial/formalization phases, operational users receive only the execution scope required for assigned work, and management regains closure/receipt controls.
 
-## Acceptance scenario
+## Documents and delivery
 
-1. An admin logs in and creates another user.
-2. A customer and PGR catalog service are registered.
-3. A quote containing PGR is created and approved.
-4. A service order is created, assigned, and moved to `IN_PROGRESS`.
-5. A document is uploaded and work is marked `COMPLETED`.
-6. The dashboard shows it as completed awaiting delivery.
-7. Delivery date, method, recipient, and delivering user are registered.
-8. It no longer awaits delivery, and audit history shows the important journey events.
+Documents will store metadata and business context in PostgreSQL and binary content in private object storage when implemented.
 
-## Explicitly out of scope
+Documents distinguish customer deliverables from internal/supporting files.
 
-- Payables, receivables, banking, reconciliation, invoices, boletos, suppliers, and partners
-- Customer portal, WhatsApp integration, automatic email, and notification engine
-- eSocial, automated document generation, OCR, AI, and native mobile apps
-- Worker health/medical records, ASO, PPE, risk management, and dedicated training management
-- Kubernetes, microservices, message brokers, Redis, and Elasticsearch
+Delivery is separate from execution completion: completed work may still be awaiting customer delivery.
 
-Training may be a catalog service. Quote and contract values may exist, but no financial module exists in MVP 1.
+## Control Plane
 
-## Completion criteria
+The Vivat Flow Control Plane manages Organizations and platform capability enablement without operating tenant business data.
 
-Authorized users can complete the acceptance scenario end to end; important actions are audited; and the dashboard reliably highlights completed service orders whose required document delivery has not been registered.
+Platform Administrators do not browse tenant Customers, Services, Quotes, Contracts, Work Orders, or documents.
+
+## Multi-vertical behavior
+
+One Organization may operate multiple Service Lines, for example Cleaning and Flooring, while sharing Customers and users.
+
+A single Quote or Contract may include Services from multiple Service Lines.
+
+The CORE must not contain behavior keyed to names such as PGR, PCMSO, LTCAT, Cleaning, or Flooring. Vertical-specific behavior requires explicit extension/configuration.
+
+## Explicitly out of scope for the initial operational MVP
+
+- full finance: payables, receivables, banking, reconciliation, invoices, boletos
+- supplier/partner management unless later required
+- customer portal
+- automatic WhatsApp/email notification engine
+- eSocial integrations
+- automated document generation/OCR/AI workflows
+- worker medical records or other sensitive health datasets without explicit approved scope
+- native mobile applications
+- microservices, Kubernetes, message brokers, Redis, or Elasticsearch without demonstrated need
+- electronic Contract signatures, generated legal PDFs, amendments, renewals, recurring execution, or Work Order creation as incidental Contract features
+
+## Acceptance direction
+
+The MVP should allow an authorized tenant to:
+
+1. authenticate and administer users;
+2. maintain Customers and units;
+3. configure Services under enabled Service Lines;
+4. create and approve a multi-item Quote;
+5. explicitly formalize an approved Quote into a Contract when required;
+6. execute future Work Orders without losing tenant or commercial context;
+7. attach future Documents and register Delivery independently from completion;
+8. preserve important audit history and actionable operational visibility.
+
+Each module is accepted only after its implementation, authorization, validation, UX, and manual QA are appropriate for its risk.

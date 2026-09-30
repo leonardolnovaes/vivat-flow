@@ -8,11 +8,12 @@
 
 ## Validation
 
-- Canonical validation executions: 
-- Unit-test executions: 
-- Non-unit test executions: 
-- Retries and cause: 
-- Additional static/build/lint checks: 
+- Canonical validation requested by user: yes/no
+- `scripts/validate.ps1` executions:
+- Unit-test executions:
+- Non-unit test executions (must be 0 unless explicitly authorized):
+- Retries and cause:
+- Additional static/build/lint checks:
 
 ## Manual QA
 

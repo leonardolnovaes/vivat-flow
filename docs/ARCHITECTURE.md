@@ -2,87 +2,128 @@
 
 ## Approach
 
-TSDT ERP will be a pragmatic modular monolith: one deployable application with feature-oriented module boundaries. This keeps MVP development and deployment simple while making ownership clear. Do not add microservices, generic repositories, CQRS frameworks, event sourcing, or extra infrastructure without a demonstrated need.
+Vivat Flow is a pragmatic multi-tenant modular monolith: one deployable application with feature-oriented module boundaries. This keeps development and deployment simple while preserving clear ownership.
 
-## Proposed repository structure
+Do not introduce microservices, generic repository layers, CQRS frameworks, event sourcing, message brokers, or additional infrastructure without a demonstrated need.
 
-```text
-backend/          ASP.NET Core application and backend tests
-frontend/         React application
-e2e/              Playwright tests
-infrastructure/   local Docker Compose configuration
-docs/             product and architecture documentation
-```
+The historical `Tsdt` technical namespace remains in the current codebase. Product behavior is Vivat Flow; renaming the technical namespace is a separate refactor.
 
-## Module boundaries and domain model
+## Core versus vertical extensions
+
+The CORE contains concepts reusable across service businesses: Identity, Organizations, Customers, Service Lines, Service Catalog, Quotes, Contracts, future Work Orders, Documents, Notifications, Audit, and related platform capabilities.
+
+Vertical-specific SST, Cleaning, Flooring, clinic, or other rules must not contaminate the CORE. Add vertical behavior only through explicit configuration or extensions when a generic model cannot represent it cleanly.
+
+See [PRODUCT_MODEL.md](PRODUCT_MODEL.md) for canonical domain boundaries.
+
+## Module boundaries
 
 | Module | Owns |
 | --- | --- |
 | Authentication & Administration | identities, roles, access, user lifecycle |
-| Customers | customers, contacts, units |
-| Service Catalog | configurable service definitions |
-| Quotes | quotes, items, lifecycle |
-| Contracts | recurring agreements and covered services |
-| Service Orders | work, items, assignments, dates, operational status |
-| Documents | document metadata, context, versions, storage references |
-| Deliveries | delivery records, document associations, evidence references |
-| Dashboard | operational projections and actionable lists |
-| Audit | immutable important-action records |
+| Control Plane | Organization lifecycle and platform-level Service Line enablement |
+| Customers | tenant customers, contacts, units |
+| Service Catalog | tenant service definitions |
+| Service Lines | global lines and Organization enablement |
+| Quotes | commercial proposals, items, approval lifecycle, assignment/visits |
+| Contracts | explicit formalization of approved Quotes and immutable commercial scope |
+| Work Orders | future execution, assignments, dates, operational status |
+| Documents | future document metadata, context, versions, storage references |
+| Deliveries | future delivery records and evidence |
+| Dashboard | future operational projections/actionable lists |
+| Audit | accountable important-action records |
 
-A Customer has contacts and units. Quotes have items that reference catalog services; an approved Quote may originate one or more Service Orders. A Contract has covered services and may originate many Service Orders. Each Service Order belongs to a customer, optionally a unit, and has exactly one origin: approved quote or contract. It has items, responsible users, dates, status, pending items, and notes. Documents have customer/service-order context and optional item context. Deliveries belong to an order and associate delivered documents. Audit entries retain actor, action, entity type/identifier, time, and minimized context.
+## Tenant boundary
 
-Operational status is independent of delivery. “Completed, awaiting delivery” is a dashboard projection of completed work without required registered delivery.
+`Organization` is the tenant root. `Customer` is a business customer inside one Organization.
 
-Documents must distinguish customer deliverables from internal, draft, working, or evidence files. A delivery references one or more documents actually delivered; it does not imply every document on the service order was delivered. The exact delivery-state rule remains intentionally simple for MVP 1 and does not require a workflow engine.
+Tenant-owned aggregate roots are resolved server-side from the authenticated user's Organization. Backend authorization and tenant filters are authoritative; the frontend is not a security boundary.
 
-## Backend, data, and access
+Current tenant ownership covers Customers, Services, Quotes, Contracts, eligible-professional lookups, and their owned child records. Future operational aggregates must implement the same boundary before release.
 
-The backend will use ASP.NET Core/C#, Entity Framework Core, PostgreSQL, and ASP.NET Core Identity. PostgreSQL is the system of record; migrations begin only with implementation. Keep data access explicit and close to module behavior.
+Platform Administrators are separate from tenant users. Platform access must never imply operational tenant access.
 
-This first-party web app uses secure HttpOnly cookie authentication. No public registration exists. Only ADMIN creates users. Backend authorization is authoritative; the frontend is not a security boundary.
+## Service Lines
 
-When no application users exist, startup may bootstrap the first ADMIN only from environment/configuration secrets. Bootstrap is idempotent, never overwrites an existing administrator, requires an initial password change, and does nothing if required credentials are absent.
+Service Lines are global platform catalog entries with stable technical codes. The Control Plane enables or disables lines per Organization.
 
-## Documents, audit, testing, frontend
+A tenant Service references exactly one Service Line. New selection requires the line to be globally active and enabled for that Organization.
 
-Metadata and business context are stored in PostgreSQL. File content will use private S3-compatible object storage, with MinIO expected locally once uploads are implemented. Upload validation, authorization, and safe content handling are mandatory.
+Quotes and Contracts may contain items from multiple Service Lines. There is intentionally no Quote-level or Contract-level ServiceLineId.
 
-Audit records important changes such as user creation, customer changes, quote/status changes, assignments, uploads, and deliveries. Never include passwords, tokens, secrets, or unnecessary sensitive data.
+Historical Quote and Contract item snapshots preserve Service Line identity/code/name so later catalog changes do not rewrite approved history.
 
-The React/TypeScript/Vite frontend is organized by product module and consumes backend APIs. xUnit tests are classified with `Category=Unit` or `Category=Integration`; the normal AI validation executes only unit tests. Playwright covers end-to-end workflows, especially the acceptance scenario and delivery-pending visibility, and is executed manually or by CI/CD.
+## Quote and Contract boundary
 
-All source code and technical artifacts use English identifiers and names, including database objects, APIs where reasonable, tests, comments, filenames, logs, and developer documentation. User-facing application content is Portuguese (Brazil); UI organization should permit clean future localization.
+Quotes represent the commercial proposal: what will be done, for how much, and under which commercial conditions.
 
-## Security boundaries
+Contracts represent explicit formalization after approval: what was contracted, for what period, and under which formal terms.
 
-- Backend enforces authorization and validation.
-- Identity handles passwords; plaintext passwords are never stored.
-- Secrets use environment configuration and are never committed or logged.
-- Files are private by default; production requires HTTPS.
-- Apply data minimization and LGPD-aware design. Medical and sensitive data are out of scope absent explicit approval.
+Approval does not auto-create a Contract. Contract creation is an explicit user action. Contract scope is inherited from the approved Quote and is not silently editable.
 
-## Identity foundation
+Work Orders are a separate future execution boundary and must not be folded into Contracts merely for convenience.
 
-`ApplicationDbContext` is the PostgreSQL EF Core context for ASP.NET Core Identity. `ApplicationUser` adds `FullName`, `IsActive`, and `MustChangePassword`; roles are `ADMIN`, `MANAGER`, and `USER`. On startup, migrations are applied and roles are ensured. If no users exist, a configured bootstrap account becomes ADMIN with `MustChangePassword=true`; no existing account is changed.
+## Backend and data
 
-Authentication uses an HttpOnly, Secure, SameSite=Lax Identity cookie. The React client uses `credentials: 'include'`. `GET /api/auth/me` returns only the safe session profile. `GET /api/auth/csrf` is safe before authentication and issues the anti-forgery cookie plus a minimal request token response. The React API helper obtains and sends that token in `X-CSRF-TOKEN` for every state-changing request, including login; the matching anti-forgery cookie is HttpOnly and set by the backend.
+The backend uses ASP.NET Core/C#, Entity Framework Core, PostgreSQL, and ASP.NET Core Identity. PostgreSQL is the system of record. Migrations are the only supported schema evolution mechanism.
 
-The forced-password-change middleware denies API access for authenticated users whose `MustChangePassword` is true, except the session profile, password change, logout, and CSRF endpoints. Future protected APIs inherit this guard.
+This first-party web application uses secure HttpOnly cookie authentication and antiforgery protection. No public registration exists.
 
-## Vivat Flow Control Plane
+Secrets come from environment/local ignored configuration and must never be committed or logged.
 
-Vivat Flow is evolving into a multi-tenant SaaS modular monolith. `Organization` represents a Vivat Flow customer/tenant; `Customer` remains an Organization's business customer. The Control Plane is a separate `/api/platform` and `/plataforma` boundary for platform administrators, who are distinct from tenant `ADMIN` users and have no tenant operational permissions. It manages Organization identity, lifecycle, and Organization-to-Service-Line enablement only. Suspended and deactivated Organizations cannot use tenant APIs. Service Lines are global platform catalog entries identified by a stable code. A tenant Service Catalog entry references exactly one Service Line, and the backend accepts that reference only when the line is globally active and enabled for the authenticated tenant Organization. Existing catalog entries are preserved when either configuration is disabled or a global line is deactivated. Subscriptions, entitlements, billing, and aggregate operational-data isolation remain future work.
+## Authorization
 
-### Control Plane privacy and LGPD posture
+Backend authorization is authoritative.
 
-The Control Plane follows privacy-by-design and security-by-design principles. It intentionally exposes only Organization account metadata needed to administer the SaaS service; it does not expose tenant Customers, Services, Quotes, Contracts, Scheduling, Work Orders, documents, or other operational content. Tenant isolation and least privilege are mandatory: a Platform Administrator is not a tenant `ADMIN`, and tenant roles grant no platform access. Lifecycle audit records retain the minimum accountable event context and must never contain passwords, tokens, secrets, or unnecessary personal data. This technical architecture supports LGPD obligations but does not by itself establish full legal compliance, which also depends on organizational and legal processes.
+Tenant commercial data currently follows explicit module policies; Platform Administrators cannot access tenant operational APIs. Future execution permissions should expose only the operational scope required for assigned work.
 
-Customers, Service Catalog, Quotes, Quote Visits, and tenant User Administration are tenant-isolated. Each request resolves the authenticated user's active Organization server-side; EF Core applies organization filters to tenant-owned aggregate roots and assigns ownership on persistence. Customer, Service, Quote, and eligible-professional lookups therefore cannot cross the authenticated Organization boundary. Child records derive ownership from their tenant-owned parent.
+Role or phase changes must not be implemented only in the frontend.
 
-Remaining tenancy debt is explicit: Contracts, Work Orders, documents, and future operational aggregates have not yet received complete Organization-level data isolation. The Control Plane must not provide platform access to operational records, and Platform Administrators are denied tenant operational API routes.
+## Privacy, security, and LGPD posture
 
-## Internationalization foundation
+Privacy-by-design and security-by-design are mandatory across modules, APIs, database schema, logs, dashboards, and integrations.
 
-Vivat Flow supports `pt-BR` and `en-US`, with `en-US` as fallback. Locale resolution is user-specific: an explicit saved user preference wins, followed by an explicit browser-local preference, browser language detection, and fallback. The backend persists only validated `PreferredLocale` values on the user profile; technical identifiers and domain enums remain language-neutral, with localized presentation in the frontend. The same foundation is used by tenant and Platform Administrator experiences.
+- Minimize personal data.
+- Keep purpose explicit.
+- Enforce tenant isolation and least privilege.
+- Do not expose secrets or sensitive data in logs, errors, or dashboards.
+- Keep Control Plane visibility superficial and account-oriented.
+- Do not add medical/sensitive worker records without explicit approved scope.
 
-User administration is an ADMIN-only API boundary. MVP 1 users have exactly one application role and are deactivated rather than deleted. Server-generated temporary passwords are returned only by their create/reset response and are never persisted outside Identity's password hash. A small `UserAdministrationAuditRecord` persists security events without passwords or tokens. Security-stamp validation occurs on every request so deactivation, role changes, and password resets invalidate stale sessions promptly.
+These technical controls support LGPD obligations but do not replace organizational/legal compliance processes.
+
+## Audit
+
+Audit important security and business transitions with actor, action, entity reference, time, and minimized context.
+
+Never audit passwords, tokens, secrets, or unnecessary personal data.
+
+## Frontend
+
+The React/TypeScript/Vite frontend is organized by product module and consumes backend APIs.
+
+User-facing content is pt-BR. Technical identifiers, source code, APIs where reasonable, tests, logs, and developer documentation are English.
+
+All meaningful frontend work follows [FRONTEND_STANDARDS.md](FRONTEND_STANDARDS.md).
+
+## Testing and validation
+
+xUnit tests use `Category=Unit` or `Category=Integration`.
+
+Normal AI-assisted validation may execute only targeted unit tests plus proportional static/build/lint checks. E2E, integration, smoke, regression, performance, and PostgreSQL-specific suites are manual/CI unless explicitly authorized.
+
+`scripts/validate.ps1` is canonical combined validation but is opt-in and runs only when the user explicitly requests it.
+
+## Runtime environments
+
+DEMO and DEV are separate application environments. They may share the PostgreSQL server but never the same logical database.
+
+Standard DEV:
+
+- frontend `5175`
+- API `7227`
+- database `vivatflow_dev`
+
+The historical DEMO database is `tsdt`. Ordinary development must not restart, migrate, reset, or mutate DEMO.
+
+See [SETUP.md](SETUP.md).
