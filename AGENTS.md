@@ -18,9 +18,11 @@
 
 ### Branch creation
 
-- For any meaningful code, configuration, infrastructure, test, or documentation change intended for `main`, work on a short-lived branch.
-- If the user already placed the worktree on a branch that clearly matches the task, continue on that branch instead of creating another one.
-- Otherwise, start from the current `main` and create one branch using:
+- Every task that will modify repository files must begin by creating a dedicated short-lived branch **before the first edit**.
+- A new implementation task must start from the current updated `main`; do not begin new implementation work on a branch left over from a previous task.
+- The only exception is a correction requested during review of an already-open pull request: review fixes must stay on that same branch and pull request.
+- Never implement directly on `main`.
+- Create the task branch using:
   - `feat/<short-name>` for new behavior.
   - `fix/<short-name>` for defect corrections.
   - `refactor/<short-name>` for behavior-preserving refactors.
@@ -39,20 +41,31 @@
 - Stage only files that belong to the current task.
 - Use concise Conventional Commit-style messages such as `feat: ...`, `fix: ...`, `refactor: ...`, `chore: ...`, `docs: ...`, or `test: ...`.
 
-### When to push
+### Mandatory completion handoff: commit, push, and pull request
 
-- Push the task branch after a coherent commit exists and the branch is ready for remote review or user handoff.
-- Do not push incomplete experimental work unless the user explicitly asks to preserve or share it remotely.
-- After review feedback, keep using the same branch and pull request. Apply the requested corrections, validate the affected scope, commit the correction, and push the same branch.
+For every prompt/task that changes repository files, completion is not finished at the working-tree stage. When the requested scope is complete, the agent must automatically:
+
+1. Review the working tree and ensure only intended task changes are included.
+2. Run the validation permitted/required for that task.
+3. Commit the completed scope on the task branch.
+4. Push that branch to `origin`.
+5. Open a pull request targeting `main`.
+6. Return the branch name, latest commit SHA, pull request number, and pull request URL.
+
+Do not leave completed implementation only in the local working tree and wait for the user to ask for commit, push, or pull request creation.
+
+Do not push incomplete experimental work unless the user explicitly asks to preserve or share it remotely.
 
 ### When to open a pull request
 
 - Every branch whose changes are intended to enter `main` must go through a pull request.
-- Open the pull request automatically when the requested scope is complete, the branch has been pushed, the applicable automated gates have passed, and there is no known blocker that makes the change unreviewable.
+- Opening the pull request is mandatory at the end of every completed repository-changing task; it is the handoff point for ChatGPT code review, not permission to merge.
 - Base the pull request on `main`.
-- Do not open a pull request for abandoned experiments, investigation-only work with no intended repository change, or incomplete work unless the user explicitly asks for a draft pull request.
-- Manual UI/E2E/integration QA may still be pending when the pull request is opened. Mark it clearly as pending; opening the pull request is the handoff point for code review, not permission to merge.
+- Do not open a pull request for investigation/read-only work with no repository change, abandoned experiments, or intentionally incomplete work unless the user explicitly asks for a draft pull request.
+- Manual UI/E2E/integration QA may still be pending when the pull request is opened. Mark it clearly as pending.
 - Use `.github/pull_request_template.md` and keep the pull request focused on one task.
+- After ChatGPT review feedback, keep using the same branch and the same pull request. Apply requested corrections, validate the affected scope, commit the correction, push the same branch, and return the new commit SHA and existing pull request number for re-review.
+- Never create a second pull request only to address review findings.
 
 ### Required handoff after opening or updating a pull request
 
@@ -71,7 +84,7 @@ Then stop. Do not merge the pull request.
 ### Review and merge gate
 
 - A pull request is not ready for `main` merely because implementation and automated validation succeeded.
-- The expected gate is: implementation complete -> pull request opened -> ChatGPT code review -> requested corrections resolved -> user manual QA when applicable -> user final review -> user performs the merge manually.
+- The mandatory gate is: new task branch created before editing -> implementation complete -> commit -> push -> pull request opened -> ChatGPT code review -> requested corrections resolved on the same branch/PR -> user manual QA when applicable -> user final review -> user performs the merge manually.
 - Treat review findings as:
   - `BLOCKER`: must be fixed before merge.
   - `NON-BLOCKING`: valid improvement that does not block the current delivery.
