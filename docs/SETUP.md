@@ -43,7 +43,7 @@ Always use `scripts\start-local.ps1` to operate DEV. It only examines and contro
 .\scripts\start-local.ps1 -Stop
 ```
 
-Do not invoke `dotnet run` or `npm run dev` directly for DEV ports. During a restart or stop, the script can only stop a listener whose command explicitly targets the DEV port; it cannot reuse or terminate DEMO's historical ports or database. `-Stop` never stops the shared PostgreSQL service. DEV migrations, bootstrap, and writes target only `vivatflow_dev`. Normal validation uses `scripts\validate.ps1`: its Release output is isolated from running APIs, so validation leaves healthy services running. If restored assets are missing, run `scripts\restore.ps1` explicitly once; it does not disable package signature checks.
+Do not invoke `dotnet run` or `npm run dev` directly for DEV ports. During a restart or stop, the script can only stop a listener whose command explicitly targets the DEV port; it cannot reuse or terminate DEMO's historical ports or database. `-Stop` never stops the shared PostgreSQL service. DEV migrations, bootstrap, and writes target only `vivatflow_dev`. `scripts\validate.ps1` is available only for explicit user-requested canonical validation; it is not part of the normal automatic AI workflow. Targeted unit tests plus proportional build/lint/static checks are the default. The validation runner's Release output is isolated from running APIs, so an explicitly requested canonical run leaves healthy services running. If restored assets are missing, run `scripts\restore.ps1` explicitly once; it does not disable package signature checks.
 
 The API health endpoint is `GET /health`; DEV is available at `https://localhost:7227` and `https://localhost:7227/health`. The DEV frontend is `http://127.0.0.1:5175`. The script starts the backend with its Development environment, DEV URL, DEV database connection, and the DEV frontend CORS origin without changing the historical launch profile or Vite defaults used by DEMO. Development uses `SameSite=None; Secure` only because the Vite frontend is served on HTTP while the API is HTTPS; its explicit CORS allowlist and antiforgery token remain required. Non-development environments retain `SameSite=Lax; Secure`.
 
@@ -93,7 +93,7 @@ Set-Location ..
 .\scripts\start-local.ps1 -FrontendOnly
 ```
 
-`scripts\validate.ps1` runs the backend Release build, only xUnit tests tagged `Category=Unit`, and the frontend production build and lint check. It deliberately excludes integration, PostgreSQL, Playwright/E2E, smoke, regression, and performance suites.
+`scripts\validate.ps1`, when the user explicitly requests canonical validation, runs the backend Release build, only xUnit tests tagged `Category=Unit`, and the frontend production build and lint check. It deliberately excludes integration, PostgreSQL, Playwright/E2E, smoke, regression, and performance suites.
 
 ### Non-unit test execution
 
@@ -173,4 +173,4 @@ Stop DEV application processes with:
 .\scripts\start-local.ps1 -Stop
 ```
 
-MinIO remains deferred until document storage is implemented. The API applies the existing Identity and Customers migrations at startup.
+MinIO remains deferred until document storage is implemented. The API applies pending application migrations at DEV startup against `vivatflow_dev`.

@@ -1,4 +1,4 @@
-# TSDT ERP instructions
+# Vivat Flow repository instructions
 
 - Read relevant `docs/` before architectural changes.
 - Stay inside MVP scope unless explicitly instructed otherwise.
@@ -95,7 +95,7 @@ Then stop. Do not merge the pull request.
 
 ## Reuse-first engineering
 
-TSDT ERP is the repository source of truth and the reference implementation for future projects. Build clean, reusable technical patterns with minimal business coupling, but do not prematurely create a generic framework or separate shared library.
+Vivat Flow is the repository source of truth and the reference implementation for this product. Build clean, reusable technical patterns with minimal business coupling, but do not prematurely create a generic framework or separate shared library.
 
 - Before creating code, inspect the repository and identify the closest reference implementation.
 - Reuse or extend established components, helpers, services, UI patterns, validation, API and authorization conventions, tests, infrastructure, scripts, and documentation whenever appropriate; do not introduce a parallel implementation for behavior already solved elsewhere.

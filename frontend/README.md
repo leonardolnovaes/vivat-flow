@@ -1,32 +1,31 @@
-# React + TypeScript + Vite
+# Vivat Flow frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + Vite frontend for Vivat Flow.
 
-Currently, two official plugins are available:
+## Standard local workflow
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Use the repository-level DEV runner rather than launching an ad-hoc Vite instance:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+.\scripts\start-local.ps1 -FrontendOnly
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Standard DEV frontend:
+
+`http://127.0.0.1:5175`
+
+The frontend uses relative API routes and the DEV proxy targets the Vivat Flow API at `https://localhost:7227`.
+
+## Quality rules
+
+All meaningful frontend work must follow:
+
+- [Frontend standards](../docs/FRONTEND_STANDARDS.md)
+- [Repository/agent workflow](../AGENTS.md)
+- [Development setup](../docs/SETUP.md)
+
+User-facing content is pt-BR. Technical identifiers and source code are English.
+
+For proportional frontend validation, use the relevant lint/build checks. Playwright/E2E is manual or CI-only unless the user explicitly authorizes execution.
+
+Do not run `scripts/validate.ps1` automatically; canonical validation is user-requested only.
