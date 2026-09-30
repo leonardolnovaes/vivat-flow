@@ -254,7 +254,7 @@ $commit = Get-Commit $Ref
 $previousCommit = if (Test-Path $deployedShaFile) { (Get-Content -Raw $deployedShaFile).Trim() } else { $null }
 $currentDemoWorktreeCommit = Get-DemoWorktreeCommit
 $deploymentChanged = $currentDemoWorktreeCommit -ne $commit -or $previousCommit -ne $commit
-if (($BackendOnly -or $FrontendOnly) -and $previousCommit -ne $commit) { throw 'Partial DEMO service operations are only allowed for the already-deployed commit. Run a full deployment when the requested revision changes.' }
+if (($BackendOnly -or $FrontendOnly) -and $deploymentChanged) { throw 'Partial DEMO service operations are only allowed when both the DEMO worktree and recorded deployment already match the requested commit. Run a full deployment when any revision state differs.' }
 $developmentCommit = (@(& git -C $repositoryRoot rev-parse --short HEAD) -join '').Trim()
 $developmentChanges = @(& git -C $repositoryRoot status --porcelain)
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the active DEV working tree.' }
@@ -269,7 +269,7 @@ if ($deploymentChanged) { Stop-DemoEnvironment }
 Ensure-DemoWorktree $commit
 $pendingMigrations = Get-PendingMigrations $postgresContainerId $localValues
 if ($pendingMigrations.Count -gt 0) { Backup-DemoDatabase $postgresContainerId $localValues $pendingMigrations }
-Restore-DemoDependencies
+if ($deploymentChanged) { Restore-DemoDependencies }
 
 if (-not $FrontendOnly) { Ensure-DemoService 'Backend' $backendHttpsPort $localValues }
 if (-not $BackendOnly) { Ensure-DemoService 'Frontend' $frontendPort $localValues }

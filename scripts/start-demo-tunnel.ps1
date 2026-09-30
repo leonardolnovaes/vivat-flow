@@ -53,6 +53,7 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
     $resolvedConfig = (Resolve-Path $ConfigPath).Path
     $config = Get-Content -Raw $resolvedConfig
     if ($config -notmatch '(?im)service:\s*http://(127\.0\.0\.1|localhost):5173(?:\s|$)') { throw "Cloudflare configuration must explicitly route to http://127.0.0.1:5173: $resolvedConfig" }
+    if ($config -notmatch '(?im)httpHostHeader:\s*["'']?127\.0\.0\.1["'']?(?:\s|$)') { throw "Cloudflare configuration must set httpHostHeader: 127.0.0.1 so the DEMO Vite host allowlist remains deterministic: $resolvedConfig" }
     $arguments = @('--no-autoupdate', '--config', $resolvedConfig, 'tunnel', 'run')
     $description = "named configuration $resolvedConfig"
 }

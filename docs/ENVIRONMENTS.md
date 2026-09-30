@@ -30,7 +30,7 @@ The DEMO command starts the existing PostgreSQL Compose service with `--no-recre
 
 Before an update, the script compares source migration IDs with `__EFMigrationsHistory`. If any are pending, it creates a PostgreSQL custom-format backup under `.local/demo/backups` before the API starts and applies migrations. The API applies only its normal EF migrations; operators must review migrations with destructive or uncertain impact before explicitly deploying their revision to DEMO.
 
-Use `./scripts/start-demo.ps1 -Stop` to stop only DEMO frontend/API processes. It leaves PostgreSQL, the persistent worktree, backups, and DEMO data intact. `-BackendOnly` and `-FrontendOnly` are maintenance operations allowed only when the requested SHA is already deployed; a changed revision always requires a full-stack deployment.
+Use `./scripts/start-demo.ps1 -Stop` to stop only DEMO frontend/API processes. It leaves PostgreSQL, the persistent worktree, backups, and DEMO data intact. `-BackendOnly` and `-FrontendOnly` are maintenance operations allowed only when both the requested SHA and the DEMO worktree already match the recorded full deployment; any divergence requires a full-stack deployment. Dependency restoration runs only before a changed full deployment, after its owned processes have stopped.
 
 ## PREVIEW
 
@@ -42,7 +42,7 @@ Do not treat a request to start or expose DEMO as a request for PREVIEW. A previ
 
 When exposing DEMO, Cloudflare always targets `http://127.0.0.1:5173`, whose Vite proxy targets the DEMO API on `7226`.
 
-Use `./scripts/start-demo-tunnel.ps1` when a checked local named Cloudflare configuration exists. The script rejects a configuration unless it explicitly routes to the DEMO frontend target. Provide `-ConfigPath` for a non-default configuration.
+Use `./scripts/start-demo-tunnel.ps1` when a checked local named Cloudflare configuration exists. The script rejects a configuration unless it explicitly routes to the DEMO frontend target and sets `httpHostHeader: 127.0.0.1`; the host override keeps Vite's allowlist deterministic for a custom public hostname. Provide `-ConfigPath` for a non-default configuration.
 
 If no named configuration exists, `./scripts/start-demo-tunnel.ps1 -QuickTunnel` is the explicit fallback. It creates a random, temporary `trycloudflare.com` URL without creating a database or preview. The link remains available only while the local `cloudflared` process runs. Use `./scripts/start-demo-tunnel.ps1 -Stop` to stop only the recorded DEMO tunnel.
 
