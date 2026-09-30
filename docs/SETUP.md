@@ -18,13 +18,11 @@ From the repository root in PowerShell:
 .\scripts\start-local.ps1 -BackendOnly
 ```
 
-### Permanent DEMO / DEV boundary
+### Environment boundary
 
-The customer-facing Cloudflare environment is the stable **DEMO** environment. Normal work must use the separate local **DEV** environment only. Do not restart, migrate, reset, rebuild, or otherwise modify DEMO as part of ordinary development. Promoting a verified change to DEMO is a separate, explicit operation after QA. DEV is never exposed through Cloudflare.
+The authoritative DEV, DEMO, PREVIEW, migration-protection, and Cloudflare rules are in [ENVIRONMENTS.md](ENVIRONMENTS.md). Normal development uses DEV only; DEMO changes require an explicit deployment action through `scripts/start-demo.ps1` after QA.
 
-DEMO keeps its existing resources unchanged: the repository's historical ports are frontend `5173`, backend HTTPS `7226`, and PostgreSQL `5432`. At the time this boundary was introduced, no listener was found on those ports from this worktree and no Cloudflare configuration was stored in the repository; do not infer the tunnel destination from this result.
-
-DEMO and DEV share the existing PostgreSQL instance on `127.0.0.1:5432`, but never the same logical database. DEMO uses the existing `tsdt` database; DEV always uses `vivatflow_dev`. Port `5174` remains reserved by the isolated E2E workflow, so DEV deliberately uses frontend port `5175`; its API uses `7227`. The startup script constructs the DEV connection string from local credentials in ignored `.env`, always with database `vivatflow_dev`; a pre-existing `ConnectionStrings__DefaultConnection` is never reused.
+DEV and DEMO share PostgreSQL on `127.0.0.1:5432`, but never the same logical database. DEV uses `vivatflow_dev`; DEMO retains the persistent `tsdt` database. Port `5174` remains reserved by the isolated E2E workflow, so DEV uses frontend port `5175` and API port `7227`.
 
 Always use `scripts\start-local.ps1` to operate DEV. It only examines and controls the DEV API/frontend ports, checks the exact DEV command before reuse or termination, verifies the shared PostgreSQL service, and creates only `vivatflow_dev` if absent. It writes logs below `.local\logs\dev`. A listener on a DEV port that is not the expected DEV command is refused, never terminated.
 
@@ -43,7 +41,7 @@ Always use `scripts\start-local.ps1` to operate DEV. It only examines and contro
 .\scripts\start-local.ps1 -Stop
 ```
 
-Do not invoke `dotnet run` or `npm run dev` directly for DEV ports. During a restart or stop, the script can only stop a listener whose command explicitly targets the DEV port; it cannot reuse or terminate DEMO's historical ports or database. `-Stop` never stops the shared PostgreSQL service. DEV migrations, bootstrap, and writes target only `vivatflow_dev`. `scripts\validate.ps1` is available only for explicit user-requested canonical validation; it is not part of the normal automatic AI workflow. Targeted unit tests plus proportional build/lint/static checks are the default. The validation runner's Release output is isolated from running APIs, so an explicitly requested canonical run leaves healthy services running. If restored assets are missing, run `scripts\restore.ps1` explicitly once; it does not disable package signature checks.
+Do not invoke `dotnet run` or `npm run dev` directly for DEV or DEMO ports. The startup scripts validate process ownership before reuse or termination. `scripts\validate.ps1` is available only for explicit user-requested canonical validation; it is not part of the normal automatic AI workflow. Targeted unit tests plus proportional build/lint/static checks are the default. The validation runner's Release output is isolated from running APIs, so an explicitly requested canonical run leaves healthy services running. If restored assets are missing, run `scripts\restore.ps1` explicitly once; it does not disable package signature checks.
 
 The API health endpoint is `GET /health`; DEV is available at `https://localhost:7227` and `https://localhost:7227/health`. The DEV frontend is `http://127.0.0.1:5175`. The script starts the backend with its Development environment, DEV URL, DEV database connection, and the DEV frontend CORS origin without changing the historical launch profile or Vite defaults used by DEMO. Development uses `SameSite=None; Secure` only because the Vite frontend is served on HTTP while the API is HTTPS; its explicit CORS allowlist and antiforgery token remain required. Non-development environments retain `SameSite=Lax; Secure`.
 

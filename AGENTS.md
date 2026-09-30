@@ -188,7 +188,7 @@ This allows the project to identify validation waste.
 
 ### Permanent DEMO / DEV boundary
 
-The customer-facing Cloudflare environment is DEMO. Normal local work is DEV only: use `scripts\start-local.ps1`, which owns frontend `5175`, API `7227`, and the separate `vivatflow_dev` logical database on the shared PostgreSQL port `5432`. Never restart, migrate, reset, or otherwise change DEMO during ordinary development. DEV and DEMO may share the PostgreSQL instance, but never the same database. Promotion to DEMO is an explicit operation after QA; DEV is never exposed through Cloudflare.
+The customer-facing Cloudflare environment is DEMO. Normal local work is DEV only: use `scripts\start-local.ps1`, which owns frontend `5175`, API `7227`, and the separate `vivatflow_dev` logical database on the shared PostgreSQL port `5432`. DEV and DEMO may share the PostgreSQL instance, but never the same database. Promotion to DEMO is an explicit operation after QA through `scripts\start-demo.ps1`; DEV is never exposed through Cloudflare. The canonical operational contract is `docs/ENVIRONMENTS.md`: DEMO is persistent (`5173`/`7226`/`tsdt`) and PREVIEW is disposable only when explicitly requested.
 
 When the user asks to start or run the application, start the complete local environment and keep it running for manual browser validation. This includes, when required:
 
@@ -227,7 +227,7 @@ If the application is already running:
 - Restart only the services necessary for the changes to take effect.
 - Do not create duplicate application instances on arbitrary ports.
 - Use `.\scripts\start-local.ps1` for backend/frontend startup (with `-BackendOnly`, `-FrontendOnly`, or `-Restart` when appropriate). It verifies the listener owner and `/health`, reuses a healthy TSDT process, and refuses an occupied port owned by another process. It starts hidden processes and writes logs under `.local\logs`.
-- Never issue `dotnet run` or `npm run dev` directly against ports 7226 or 5173 without first using the startup script. A restart must stop the project-owned process and wait for its port to be released before starting a replacement.
+- Never issue `dotnet run` or `npm run dev` directly against ports 7226 or 5173 without first using `scripts\start-demo.ps1`. A restart must stop the project-owned process and wait for its port to be released before starting a replacement.
 
 After relevant changes, the final response should clearly state that the application is available and provide the URLs needed for manual validation.
 
