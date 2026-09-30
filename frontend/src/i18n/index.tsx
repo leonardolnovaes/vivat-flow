@@ -10,6 +10,8 @@ const resources = {
 void i18n.use(initReactI18next).init({ resources, lng: browserLocale(), fallbackLng: fallbackLocale, interpolation: { escapeValue: false } })
 i18n.addResourceBundle('pt-BR', 'translation', { settings: { title: 'Configurações', preferences: 'Preferências', language: 'Idioma', close: 'Fechar' } }, true, true)
 i18n.addResourceBundle('en-US', 'translation', { settings: { title: 'Settings', preferences: 'Preferences', language: 'Language', close: 'Close' } }, true, true)
+i18n.addResourceBundle('pt-BR', 'translation', { navigation: { contracts: 'Contratos' } }, true, true)
+i18n.addResourceBundle('en-US', 'translation', { navigation: { contracts: 'Contracts' } }, true, true)
 i18n.on('languageChanged', language => { document.documentElement.lang = language })
 
 export { i18n }
