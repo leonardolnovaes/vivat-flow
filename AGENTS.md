@@ -9,8 +9,76 @@
 - Avoid broad unrelated refactors and unnecessary dependencies.
 - Explain important architecture changes before implementing them.
 - When code exists, run relevant tests.
-- Do not commit unless explicitly requested.
+- Follow the Git workflow and review gate below for branch, commit, push, pull request, review, and merge behavior.
 - All new frontend screens and meaningful frontend changes must follow `docs/FRONTEND_STANDARDS.md`; UI work is not complete until its running-screen visual/manual QA gate passes.
+
+## Git workflow and review gate
+
+`main` is the stable integration branch. Agents must not implement meaningful changes directly on `main`, must not push feature work to `main`, and must never merge a pull request without explicit user authorization.
+
+### Branch creation
+
+- For any meaningful code, configuration, infrastructure, test, or documentation change intended for `main`, work on a short-lived branch.
+- If the user already placed the worktree on a branch that clearly matches the task, continue on that branch instead of creating another one.
+- Otherwise, start from the current `main` and create one branch using:
+  - `feat/<short-name>` for new behavior.
+  - `fix/<short-name>` for defect corrections.
+  - `refactor/<short-name>` for behavior-preserving refactors.
+  - `chore/<short-name>` for tooling, infrastructure, repository configuration, or maintenance.
+  - `docs/<short-name>` for documentation-only changes.
+  - `test/<short-name>` for test-only changes.
+- Do not create `develop`, release branches, or additional workflow branches unless the user explicitly asks for them.
+- Before editing, inspect the current branch and working tree. Do not discard, rewrite, stage, or commit unrelated pre-existing changes. If unrelated changes cannot be safely isolated, stop and report the conflict.
+
+### When to commit
+
+- Do not create a commit for every small edit.
+- Commit when the requested scope has reached a cohesive, reviewable checkpoint and the applicable automated validation for that checkpoint has passed.
+- For the final implementation commit, the requested scope must be complete, known blocking failures must be resolved, and the required repository validation for the change must have passed or be explicitly documented as not applicable.
+- Do not commit knowingly broken or incomplete implementation only to create a checkpoint unless the user explicitly asks for a checkpoint commit.
+- Stage only files that belong to the current task.
+- Use concise Conventional Commit-style messages such as `feat: ...`, `fix: ...`, `refactor: ...`, `chore: ...`, `docs: ...`, or `test: ...`.
+
+### When to push
+
+- Push the task branch after a coherent commit exists and the branch is ready for remote review or user handoff.
+- Do not push incomplete experimental work unless the user explicitly asks to preserve or share it remotely.
+- After review feedback, keep using the same branch and pull request. Apply the requested corrections, validate the affected scope, commit the correction, and push the same branch.
+
+### When to open a pull request
+
+- Every branch whose changes are intended to enter `main` must go through a pull request.
+- Open the pull request automatically when the requested scope is complete, the branch has been pushed, the applicable automated gates have passed, and there is no known blocker that makes the change unreviewable.
+- Base the pull request on `main`.
+- Do not open a pull request for abandoned experiments, investigation-only work with no intended repository change, or incomplete work unless the user explicitly asks for a draft pull request.
+- Manual UI/E2E/integration QA may still be pending when the pull request is opened. Mark it clearly as pending; opening the pull request is the handoff point for code review, not permission to merge.
+- Use `.github/pull_request_template.md` and keep the pull request focused on one task.
+
+### Required handoff after opening or updating a pull request
+
+Report all of the following to the user:
+
+- Pull request number and URL.
+- Branch name.
+- Latest commit SHA.
+- Concise scope summary.
+- Automated validation executed, including canonical validation count, unit-test execution count, non-unit execution count, and retries.
+- Manual QA still required, with exact steps or commands when applicable.
+- Known risks, limitations, or intentionally deferred findings.
+
+Then stop. Do not merge the pull request.
+
+### Review and merge gate
+
+- A pull request is not ready for `main` merely because implementation and automated validation succeeded.
+- The expected gate is: implementation complete -> pull request opened -> ChatGPT code review -> requested corrections resolved -> user manual QA when applicable -> explicit user authorization to merge.
+- Treat review findings as:
+  - `BLOCKER`: must be fixed before merge.
+  - `NON-BLOCKING`: valid improvement that does not block the current delivery.
+  - `CLEAN`: no relevant issue found in the reviewed scope.
+- If review returns a blocker, fix it on the same branch, commit, push, and report the new commit SHA and the existing pull request number for re-review.
+- Agents must not approve their own work as a substitute for the designated review gate.
+- Agents must never merge, squash-merge, rebase-merge, close, or otherwise finalize the pull request unless the user explicitly authorizes that action after review and required QA.
 
 ## Reuse-first engineering
 
