@@ -21,6 +21,89 @@ public sealed class WorkOrderApiTests
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
     [Fact, Trait("Category", "Unit")]
+    public async Task Operational_sources_allow_management_only_and_do_not_disclose_commercial_data()
+    {
+        using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
+        var quote = await SeedQuoteAsync(factory);
+        var manager = await CreateUserAsync(factory, quote.OrganizationId, IdentityRoles.Manager, "source-manager@test");
+        var worker = await CreateUserAsync(factory, quote.OrganizationId, IdentityRoles.User, "source-worker@test");
+        using var managerClient = IdentityTestClient.Create(factory); await IdentityTestClient.LoginAsync(managerClient, manager.Email!, "Userpass1!Password");
+        using var workerClient = IdentityTestClient.Create(factory); await IdentityTestClient.LoginAsync(workerClient, worker.Email!, "Userpass1!Password");
+
+        foreach (var client in new[] { admin, managerClient })
+        {
+            var response = await client.GetAsync($"/api/work-orders/sources/quote/{quote.Id}");
+            response.EnsureSuccessStatusCode();
+            var raw = await response.Content.ReadAsStringAsync();
+            var source = JsonSerializer.Deserialize<WorkOrderSourceDetailResponse>(raw, Json)!;
+            Assert.Equal(quote.Id, source.Source.QuoteId);
+            Assert.True(source.Source.CanCreate);
+            Assert.Equal("Original address", source.Source.ServiceAddressSnapshot);
+            Assert.Equal("Historical service", Assert.Single(source.Items).ServiceNameSnapshot);
+            foreach (var forbidden in new[] { "totalAmount", "approvedTotalAmount", "paymentType", "installmentCount", "paymentTerms", "price" })
+                Assert.False(raw.Contains(forbidden, StringComparison.OrdinalIgnoreCase), $"Operational source includes {forbidden}.");
+            var list = await client.GetFromJsonAsync<WorkOrderSourceListResponse>("/api/work-orders/sources?sourceType=Quote", Json);
+            Assert.Contains(list!.Items, item => item.Id == quote.Id && item.CanCreate);
+        }
+        Assert.Equal(HttpStatusCode.Forbidden, (await managerClient.GetAsync($"/api/quotes/{quote.Id}")).StatusCode);
+        var managerOrder = await Send<WorkOrderDetailResponse>(managerClient, HttpMethod.Post, "/api/work-orders/from-quote", new CreateWorkOrderRequest(quote.Id, null, null, null, null));
+        Assert.Equal(WorkOrderStatus.Draft, managerOrder.Status);
+        Assert.Equal(HttpStatusCode.Forbidden, (await workerClient.GetAsync($"/api/work-orders/sources/quote/{quote.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await workerClient.GetAsync("/api/work-orders/sources?sourceType=Quote")).StatusCode);
+
+        var foreignOrganization = new Organization { Id = Guid.NewGuid(), Name = "Foreign", Slug = $"foreign-source-{Guid.NewGuid():N}", Status = OrganizationStatus.Active };
+        using (var scope = factory.Services.CreateScope()) { var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(); db.Organizations.Add(foreignOrganization); await db.SaveChangesAsync(); }
+        var foreign = await CreateUserAsync(factory, foreignOrganization.Id, IdentityRoles.Manager, "foreign-source-manager@test");
+        using var foreignClient = IdentityTestClient.Create(factory); await IdentityTestClient.LoginAsync(foreignClient, foreign.Email!, "Userpass1!Password");
+        Assert.Equal(HttpStatusCode.NotFound, (await foreignClient.GetAsync($"/api/work-orders/sources/quote/{quote.Id}")).StatusCode);
+        Assert.Empty((await foreignClient.GetFromJsonAsync<WorkOrderSourceListResponse>("/api/work-orders/sources?sourceType=Quote", Json))!.Items);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var platform = new ApplicationUser { FullName = "Platform", UserName = "wo-source-platform@test", Email = "wo-source-platform@test", EmailConfirmed = true, IsActive = true, MustChangePassword = false, IsPlatformAdministrator = true };
+            Assert.True((await users.CreateAsync(platform, "Userpass1!Password")).Succeeded);
+            using var platformClient = IdentityTestClient.Create(factory); await IdentityTestClient.LoginAsync(platformClient, platform.Email!, "Userpass1!Password");
+            Assert.Equal(HttpStatusCode.Forbidden, (await platformClient.GetAsync($"/api/work-orders/sources/quote/{quote.Id}")).StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, (await platformClient.GetAsync("/api/work-orders/sources?sourceType=Quote")).StatusCode);
+        }
+    }
+
+    [Fact, Trait("Category", "Unit")]
+    public async Task Source_preview_tracks_governing_contract_and_current_work_order()
+    {
+        using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
+        var quote = await SeedQuoteAsync(factory);
+        var contract = await SeedContractAsync(factory, quote, ContractStatus.Draft);
+        var quotePath = $"/api/work-orders/sources/quote/{quote.Id}";
+        var draftPreview = await admin.GetFromJsonAsync<WorkOrderSourceDetailResponse>(quotePath, Json);
+        Assert.False(draftPreview!.Source.CanCreate);
+        Assert.Equal(contract.Id, draftPreview.Source.GoverningContractId);
+        Assert.Equal(nameof(ContractStatus.Draft), draftPreview.Source.GoverningContractStatus);
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"/api/work-orders/sources/contract/{Guid.NewGuid()}")).StatusCode);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            contract.Status = ContractStatus.Active; db.Contracts.Update(contract); await db.SaveChangesAsync();
+        }
+        var contractPath = $"/api/work-orders/sources/contract/{contract.Id}";
+        var contractPreview = await admin.GetFromJsonAsync<WorkOrderSourceDetailResponse>(contractPath, Json);
+        Assert.True(contractPreview!.Source.CanCreate);
+        Assert.Equal("Contract historical service", Assert.Single(contractPreview.Items).ServiceNameSnapshot);
+        Assert.Equal("Original address", contractPreview.Source.ServiceAddressSnapshot);
+        Assert.False((await admin.GetFromJsonAsync<WorkOrderSourceDetailResponse>(quotePath, Json))!.Source.CanCreate);
+        Assert.Contains((await admin.GetFromJsonAsync<WorkOrderSourceListResponse>("/api/work-orders/sources?sourceType=Contract", Json))!.Items, item => item.Id == contract.Id && item.CanCreate);
+
+        var order = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Post, "/api/work-orders/from-contract", new CreateWorkOrderRequest(contract.Id, null, null, null, null));
+        Assert.Equal(order.Id, (await admin.GetFromJsonAsync<WorkOrderSourceDetailResponse>(quotePath, Json))!.Source.CurrentWorkOrderId);
+        var occupied = await admin.GetFromJsonAsync<WorkOrderSourceDetailResponse>(contractPath, Json);
+        Assert.Equal(order.Id, occupied!.Source.CurrentWorkOrderId);
+        Assert.Equal(order.Number, occupied.Source.CurrentWorkOrderNumber);
+        Assert.False(occupied.Source.CanCreate);
+    }
+
+    [Fact, Trait("Category", "Unit")]
     public async Task Quote_creation_preserves_operational_snapshots_rejects_duplicates_and_allows_cancelled_replacement()
     {
         using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
@@ -175,6 +258,13 @@ public sealed class WorkOrderApiTests
         var quote = new Quote { Id = id, OrganizationId = organizationId, Number = $"Q{id:N}"[..16], CustomerId = customer.Id, CustomerLegalNameSnapshot = customer.LegalName, CustomerCnpjSnapshot = customer.Cnpj, ServiceAddressSnapshot = "Original address", Status = QuoteStatus.Approved, TotalAmount = 99, PaymentType = QuotePaymentType.Cash, CreatedAtUtc = now, UpdatedAtUtc = now, CreatedByUserId = "test", UpdatedByUserId = "test", Version = Guid.NewGuid() };
         quote.Items.Add(new QuoteItem { Id = Guid.NewGuid(), QuoteId = id, ServiceId = service.Id, ServiceCodeSnapshot = "OLD", ServiceNameSnapshot = "Historical service", ServiceLineIdSnapshot = line.Id, ServiceLineCodeSnapshot = "OLD", ServiceLineNameSnapshot = "Historical line", DisplayOrder = 0 });
         db.AddRange(line, customer, service, quote); await db.SaveChangesAsync(); return quote;
+    }
+    private static async Task<Contract> SeedContractAsync(IdentityWebApplicationFactory factory, Quote quote, ContractStatus status)
+    {
+        using var scope = factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var contract = new Contract { Id = Guid.NewGuid(), OrganizationId = quote.OrganizationId, QuoteId = quote.Id, CustomerId = quote.CustomerId, CustomerLegalNameSnapshot = quote.CustomerLegalNameSnapshot, ApprovedTotalAmount = 99, PaymentType = QuotePaymentType.Cash, Status = status, CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow, CreatedByUserId = "test", UpdatedByUserId = "test", Version = Guid.NewGuid() };
+        contract.Items.Add(new ContractItem { Id = Guid.NewGuid(), ContractId = contract.Id, QuoteItemId = quote.Items.Single().Id, ServiceId = quote.Items.Single().ServiceId, ServiceCodeSnapshot = "OLD", ServiceNameSnapshot = "Contract historical service", ServiceLineId = quote.Items.Single().ServiceLineIdSnapshot, ServiceLineCodeSnapshot = "OLD", ServiceLineNameSnapshot = "Contract historical line", DisplayOrder = 0 });
+        db.Contracts.Add(contract); await db.SaveChangesAsync(); return contract;
     }
     private static Task<HttpResponseMessage> Post(HttpClient client, string path, object body) => SendResponse(client, HttpMethod.Post, path, body);
     private static async Task<T> Send<T>(HttpClient client, HttpMethod method, string path, object body) { var response = await SendResponse(client, method, path, body); response.EnsureSuccessStatusCode(); return (await response.Content.ReadFromJsonAsync<T>(Json))!; }

@@ -7,3 +7,7 @@ export type WorkOrderList = { items: WorkOrderSummary[]; page: number; pageSize:
 export type WorkOrderHistory = { action: string; occurredAtUtc: string }
 export type EligibleAssignee = { id: string; fullName: string; email: string; role: string }
 export type Planning = { assignedUserId: string; scheduledStart: string; scheduledEnd: string; operationalNotes: string }
+export type WorkOrderSourceSummary = { id: string; sourceType: WorkOrderSource; quoteId: string; contractId: string | null; reference: string; customerLegalNameSnapshot: string; serviceAddressSnapshot: string | null; status: string; canCreate: boolean; governingContractId: string | null; governingContractStatus: string | null; currentWorkOrderId: string | null; currentWorkOrderNumber: string | null }
+export type WorkOrderSourceItem = Pick<WorkOrderItem, 'serviceCodeSnapshot' | 'serviceNameSnapshot' | 'serviceLineCodeSnapshot' | 'serviceLineNameSnapshot' | 'displayOrder'>
+export type WorkOrderSourceDetail = { source: WorkOrderSourceSummary; items: WorkOrderSourceItem[] }
+export type WorkOrderSourceList = { items: WorkOrderSourceSummary[]; page: number; pageSize: number; totalCount: number }

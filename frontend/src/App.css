@@ -166,3 +166,20 @@ main:has(.quote-summary) .table-wrap tbody td:nth-child(3), main:has(.quote-summ
 .wo-history li span { color:#526176; font-size:.85rem; }
 @media (max-width:1050px) { .wo-detail-layout,.wo-create-layout { grid-template-columns:1fr; } }
 @media (max-width:560px) { .wo-toolbar { display:grid; } .wo-toolbar label { min-width:0; } .wo-table { display:none; } .wo-mobile-list { display:grid; gap:.65rem; padding:0 1rem 1rem; } .wo-mobile-list article { display:grid; gap:.45rem; padding:.8rem; border:1px solid #e1e8f0; border-radius:.6rem; background:#fbfdff; } .wo-mobile-list article > div { display:flex; align-items:center; justify-content:space-between; gap:.5rem; } .wo-mobile-list p { margin:0; } .wo-mobile-list small { color:#526176; } .wo-detail-header { flex-direction:column; } .wo-definition,.wo-form-grid,.wo-services { grid-template-columns:1fr; } .wo-definition { gap:.18rem; } .wo-definition dd { margin-bottom:.5rem; } .wo-form-grid label:last-child { grid-column:auto; } }
+.wo-source-toolbar { display:grid; gap:1rem; margin-bottom:1.25rem; }
+.wo-source-toolbar fieldset { border:0; padding:0; margin:0; }
+.wo-source-toolbar legend { margin-bottom:.4rem; font-weight:700; }
+.wo-source-toolbar fieldset .actions { justify-content:flex-start; gap:1.25rem; }
+.wo-source-toolbar fieldset label { display:inline-flex; align-items:center; gap:.4rem; }
+.wo-source-toolbar fieldset input { width:auto; }
+.wo-source-toolbar form { display:flex; align-items:end; flex-wrap:wrap; gap:.75rem; }
+.wo-source-toolbar form label { flex:1 1 18rem; }
+.wo-source-results { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+.wo-source-card { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+.wo-source-card h3 { margin:.2rem 0; font-size:1.05rem; }
+.wo-source-card p { margin:.3rem 0; color:#526176; }
+.wo-source-card small { color:#526176; }
+.wo-source-action { display:grid; justify-items:end; gap:.4rem; text-align:right; max-width:14rem; }
+.wo-source-action button { white-space:nowrap; }
+@media (max-width:1050px) { .wo-source-results { grid-template-columns:1fr; } }
+@media (max-width:560px) { .wo-source-card { display:grid; } .wo-source-action { justify-items:start; text-align:left; max-width:none; } .wo-source-toolbar fieldset .actions { flex-direction:column; align-items:flex-start; gap:.5rem; } .wo-source-toolbar form button { width:100%; } }
