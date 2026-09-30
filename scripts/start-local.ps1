@@ -78,7 +78,7 @@ function Get-DevDatabaseConfiguration {
     foreach ($name in @('POSTGRES_USER', 'POSTGRES_PASSWORD')) {
         if ([string]::IsNullOrWhiteSpace($values[$name])) { throw ".env is missing $name; cannot configure the DEV database." }
     }
-    return [PSCustomObject]@{ ConnectionString = "Host=127.0.0.1;Port=$postgresPort;Database=$databaseName;Username=$($values['POSTGRES_USER']);Password=$($values['POSTGRES_PASSWORD'])"; User = $values['POSTGRES_USER'] }
+    return [PSCustomObject]@{ ConnectionString = "Host=127.0.0.1;Port=$postgresPort;Database=$databaseName;Username=$($values['POSTGRES_USER']);Password=$($values['POSTGRES_PASSWORD'])"; User = $values['POSTGRES_USER']; LocalValues = $values }
 }
 
 function Ensure-DevDatabase($database) {
@@ -118,6 +118,9 @@ function Start-Backend {
     New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
     $stdout = Join-Path $logDirectory 'backend.stdout.log'; $stderr = Join-Path $logDirectory 'backend.stderr.log'
     $environment = @{ ASPNETCORE_ENVIRONMENT = 'Development'; ConnectionStrings__DefaultConnection = $database.ConnectionString; Cors__AllowedOrigins__0 = "http://127.0.0.1:$frontendPort" }
+    foreach ($name in @('BootstrapAdmin__Email', 'BootstrapAdmin__FullName', 'BootstrapAdmin__Password', 'PlatformBootstrapAdmin__Email', 'PlatformBootstrapAdmin__FullName', 'PlatformBootstrapAdmin__Password')) {
+        if (-not [string]::IsNullOrWhiteSpace($database.LocalValues[$name])) { $environment[$name] = $database.LocalValues[$name] }
+    }
     $process = Start-ProcessWithEnvironment $environment {
         Start-Process -FilePath 'dotnet' -ArgumentList @('run', '--no-restore', '--project', $backendProject, '--no-launch-profile', '--', '--urls', "https://localhost:$backendHttpsPort") -WorkingDirectory $repositoryRoot -RedirectStandardOutput $stdout -RedirectStandardError $stderr -WindowStyle Hidden -PassThru
     }

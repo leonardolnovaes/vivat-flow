@@ -71,7 +71,7 @@ The forced-password-change middleware denies API access for authenticated users 
 
 ## Vivat Flow Control Plane
 
-Vivat Flow is evolving into a multi-tenant SaaS modular monolith. `Organization` represents a Vivat Flow customer/tenant; `Customer` remains an Organization's business customer. The Control Plane is a separate `/api/platform` and `/plataforma` boundary for platform administrators, who are distinct from tenant `ADMIN` users and have no tenant operational permissions. It manages Organization identity and lifecycle only. Suspended and deactivated Organizations cannot use tenant APIs. Subscriptions, entitlements, billing, Service Lines, and aggregate operational-data isolation remain future work.
+Vivat Flow is evolving into a multi-tenant SaaS modular monolith. `Organization` represents a Vivat Flow customer/tenant; `Customer` remains an Organization's business customer. The Control Plane is a separate `/api/platform` and `/plataforma` boundary for platform administrators, who are distinct from tenant `ADMIN` users and have no tenant operational permissions. It manages Organization identity, lifecycle, and Organization-to-Service-Line enablement only. Suspended and deactivated Organizations cannot use tenant APIs. Service Lines are global platform catalog entries identified by a stable code. A tenant Service Catalog entry references exactly one Service Line, and the backend accepts that reference only when the line is globally active and enabled for the authenticated tenant Organization. Existing catalog entries are preserved when either configuration is disabled or a global line is deactivated. Subscriptions, entitlements, billing, and aggregate operational-data isolation remain future work.
 
 ### Control Plane privacy and LGPD posture
 

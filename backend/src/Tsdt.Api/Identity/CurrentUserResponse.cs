@@ -1,6 +1,8 @@
 namespace Tsdt.Api.Identity;
 
-public sealed record CurrentUserResponse(string Id, string FullName, string Email, IReadOnlyList<string> Roles, bool MustChangePassword, bool IsPlatformAdministrator, string? PreferredLocale);
+public sealed record CurrentOrganizationResponse(Guid Id, string Name);
+
+public sealed record CurrentUserResponse(string Id, string FullName, string Email, IReadOnlyList<string> Roles, bool MustChangePassword, bool IsPlatformAdministrator, string? PreferredLocale, CurrentOrganizationResponse? Organization);
 
 public sealed record CsrfTokenResponse(string Token);
 

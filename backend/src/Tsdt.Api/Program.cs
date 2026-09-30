@@ -10,6 +10,7 @@ using Tsdt.Api.Identity;
 using Tsdt.Api.Services;
 using Tsdt.Api.Quotes;
 using Tsdt.Api.Platform;
+using Tsdt.Api.Contracts;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -149,9 +150,9 @@ auth.MapPost("/login", async (LoginRequest request, HttpContext context, IAntifo
     var organization = user.OrganizationId is Guid organizationId ? await dbContext.Organizations.FindAsync(organizationId) : null;
     if (!OrganizationAccess.IsTenantAccessAllowed(user.IsPlatformAdministrator, user.OrganizationId, organization?.Status)) return Results.StatusCode(StatusCodes.Status403Forbidden);
     await signInManager.SignInAsync(user, isPersistent: false);
-    return Results.Ok(await CreateCurrentUserResponseAsync(user, userManager));
+    return Results.Ok(await CreateCurrentUserResponseAsync(user, userManager, dbContext));
 });
-auth.MapGet("/me", async (HttpContext context, UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager) =>
+auth.MapGet("/me", async (HttpContext context, UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext) =>
 {
     var user = await userManager.GetUserAsync(context.User);
     if (user is null || !user.IsActive)
@@ -159,7 +160,7 @@ auth.MapGet("/me", async (HttpContext context, UserManager<ApplicationUser> user
         if (user is not null) await signInManager.SignOutAsync();
         return Results.Unauthorized();
     }
-    return Results.Ok(await CreateCurrentUserResponseAsync(user, userManager));
+    return Results.Ok(await CreateCurrentUserResponseAsync(user, userManager, dbContext));
 }).RequireAuthorization();
 auth.MapPost("/change-password", async (ChangePasswordRequest request, HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, IOptions<IdentityOptions> identityOptions) =>
 {
@@ -181,7 +182,7 @@ auth.MapPost("/logout", async (HttpContext context, IAntiforgery antiforgery, Si
     await signInManager.SignOutAsync();
     return Results.NoContent();
 }).RequireAuthorization();
-auth.MapPut("/preferred-locale", async (UpdatePreferredLocaleRequest request, HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> userManager) =>
+auth.MapPut("/preferred-locale", async (UpdatePreferredLocaleRequest request, HttpContext context, IAntiforgery antiforgery, UserManager<ApplicationUser> userManager, ApplicationDbContext dbContext) =>
 {
     if (!await ValidateAntiforgeryAsync(context, antiforgery)) return Results.BadRequest();
     if (!LocaleRules.IsSupported(request.PreferredLocale)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["preferredLocale"] = ["Unsupported locale."] });
@@ -190,7 +191,7 @@ auth.MapPut("/preferred-locale", async (UpdatePreferredLocaleRequest request, Ht
     user.PreferredLocale = request.PreferredLocale;
     var update = await userManager.UpdateAsync(user);
     if (!update.Succeeded) return IdentityValidationProblem(update);
-    return Results.Ok(await CreateCurrentUserResponseAsync(user, userManager));
+    return Results.Ok(await CreateCurrentUserResponseAsync(user, userManager, dbContext));
 }).RequireAuthorization();
 
 var adminUsers = app.MapGroup("/api/admin/users").RequireAuthorization(policy => policy.RequireRole(IdentityRoles.Admin));
@@ -344,6 +345,7 @@ adminUsers.MapPost("/{id}/reset-password", async (string id, HttpContext context
 app.MapCustomerEndpoints();
 app.MapServiceEndpoints();
 app.MapQuoteEndpoints();
+app.MapContractEndpoints();
 app.MapPlatformOrganizationEndpoints();
 app.MapServiceLineEndpoints();
 
@@ -362,10 +364,13 @@ using (var scope = app.Services.CreateScope())
 }
 app.Run();
 
-static async Task<CurrentUserResponse> CreateCurrentUserResponseAsync(ApplicationUser user, UserManager<ApplicationUser> userManager)
+static async Task<CurrentUserResponse> CreateCurrentUserResponseAsync(ApplicationUser user, UserManager<ApplicationUser> userManager, ApplicationDbContext dbContext)
 {
     var roles = await userManager.GetRolesAsync(user);
-    return new CurrentUserResponse(user.Id, user.FullName, user.Email!, roles.ToArray(), user.MustChangePassword, user.IsPlatformAdministrator, user.PreferredLocale);
+    var organization = !user.IsPlatformAdministrator && user.OrganizationId is Guid organizationId
+        ? await dbContext.Organizations.AsNoTracking().Where(item => item.Id == organizationId).Select(item => new CurrentOrganizationResponse(item.Id, item.Name)).SingleOrDefaultAsync()
+        : null;
+    return new CurrentUserResponse(user.Id, user.FullName, user.Email!, roles.ToArray(), user.MustChangePassword, user.IsPlatformAdministrator, user.PreferredLocale, organization);
 }
 
 static async Task<UserAdministrationResponse> CreateUserAdministrationResponseAsync(ApplicationUser user, UserManager<ApplicationUser> userManager) => new(user.Id, user.FullName, user.Email!, (await userManager.GetRolesAsync(user)).ToArray(), user.IsActive, user.MustChangePassword);

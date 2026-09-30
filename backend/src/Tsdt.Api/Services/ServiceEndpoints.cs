@@ -51,7 +51,9 @@ public static partial class ServiceEndpoints
         var total = await query.CountAsync();
         var offset = ((long)requestedPage - 1) * requestedPageSize;
         if (offset > int.MaxValue) return Results.Ok(new ServiceListResponse([], requestedPage, requestedPageSize, total));
-        var items = await query.Skip((int)offset).Take(requestedPageSize).Select(service => ToSummary(service)).ToListAsync();
+        var items = await query.Skip((int)offset).Take(requestedPageSize)
+            .Select(service => new ServiceSummaryResponse(service.Id, service.Code, service.Name, service.BasePrice, service.ServiceLineId, service.ServiceLine.Code, service.ServiceLine.Name, service.IsActive, service.CreatedAtUtc, service.UpdatedAtUtc))
+            .ToListAsync();
         return Results.Ok(new ServiceListResponse(items, requestedPage, requestedPageSize, total));
     }
 
@@ -60,7 +62,7 @@ public static partial class ServiceEndpoints
         var organizationId = TenantContext.OrganizationId(context);
         IQueryable<Service> query = db.Services.AsNoTracking().Where(service => service.Id == id && service.OrganizationId == organizationId);
         if (user.IsInRole(IdentityRoles.User)) query = query.Where(service => service.IsActive);
-        var service = await query.SingleOrDefaultAsync();
+        var service = await query.Include(item => item.ServiceLine).SingleOrDefaultAsync();
         return service is null ? Results.NotFound() : Results.Ok(ToDetail(service));
     }
 
@@ -73,7 +75,8 @@ public static partial class ServiceEndpoints
         if (await db.Services.AnyAsync(service => service.OrganizationId == organizationId && service.Code == input.Code)) return DuplicateCode();
         var now = DateTimeOffset.UtcNow; var actor = GetActor(context);
         if (!await IsEnabledServiceLineAsync(db, organizationId, request.ServiceLineId)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["serviceLineId"] = ["Selecione uma linha de serviÃ§o ativa habilitada para sua organizaÃ§Ã£o."] });
-        var service = new Service { Id = Guid.NewGuid(), OrganizationId = organizationId, ServiceLineId = request.ServiceLineId, Code = input.Code!, Name = input.Name!, Description = input.Description, BasePrice = input.BasePrice, IsActive = true, CreatedAtUtc = now, UpdatedAtUtc = now, CreatedByUserId = actor, UpdatedByUserId = actor, Version = Guid.NewGuid() };
+        var serviceLine = await db.ServiceLines.SingleAsync(line => line.Id == request.ServiceLineId);
+        var service = new Service { Id = Guid.NewGuid(), OrganizationId = organizationId, ServiceLineId = request.ServiceLineId, ServiceLine = serviceLine, Code = input.Code!, Name = input.Name!, Description = input.Description, BasePrice = input.BasePrice, IsActive = true, CreatedAtUtc = now, UpdatedAtUtc = now, CreatedByUserId = actor, UpdatedByUserId = actor, Version = Guid.NewGuid() };
         db.Services.Add(service); AddAudit(db, service.Id, actor, "SERVICE_CREATED", "Code,Name,Description,BasePrice");
         return await SaveAsync(db, () => Results.Created($"/api/services/{service.Id}", ToDetail(service)));
     }
@@ -84,7 +87,7 @@ public static partial class ServiceEndpoints
         var input = Validate(request.Code, request.Name, request.Description, request.BasePrice);
         if (input.Errors is not null) return Results.ValidationProblem(input.Errors);
         var organizationId = TenantContext.OrganizationId(context);
-        var service = await db.Services.SingleOrDefaultAsync(service => service.Id == id && service.OrganizationId == organizationId);
+        var service = await db.Services.Include(item => item.ServiceLine).SingleOrDefaultAsync(service => service.Id == id && service.OrganizationId == organizationId);
         if (service is null) return Results.NotFound();
         if (service.Version != request.ExpectedVersion) return Stale();
         if (!await IsEnabledServiceLineAsync(db, organizationId, request.ServiceLineId)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["serviceLineId"] = ["Selecione uma linha de serviÃ§o ativa habilitada para sua organizaÃ§Ã£o."] });
@@ -123,8 +126,7 @@ public static partial class ServiceEndpoints
     private static void AddAudit(ApplicationDbContext db, Guid serviceId, string actor, string action, string? changedFields) => db.ServiceAuditRecords.Add(new ServiceAuditRecord { Id = Guid.NewGuid(), ServiceId = serviceId, ActorUserId = actor, Action = action, OccurredAtUtc = DateTimeOffset.UtcNow, ChangedFields = changedFields });
     private static void Touch(Service service, string actor) { service.UpdatedAtUtc = DateTimeOffset.UtcNow; service.UpdatedByUserId = actor; service.Version = Guid.NewGuid(); }
     private static Task<bool> IsEnabledServiceLineAsync(ApplicationDbContext db, Guid organizationId, Guid serviceLineId) => db.OrganizationServiceLines.AnyAsync(item => item.OrganizationId == organizationId && item.ServiceLineId == serviceLineId && item.ServiceLine.IsActive);
-    private static ServiceSummaryResponse ToSummary(Service service) => new(service.Id, service.Code, service.Name, service.BasePrice, service.ServiceLineId, service.IsActive, service.CreatedAtUtc, service.UpdatedAtUtc);
-    private static ServiceDetailResponse ToDetail(Service service) => new(service.Id, service.Code, service.Name, service.Description, service.BasePrice, service.ServiceLineId, service.IsActive, service.CreatedAtUtc, service.UpdatedAtUtc, service.CreatedByUserId, service.UpdatedByUserId, service.Version);
+    private static ServiceDetailResponse ToDetail(Service service) => new(service.Id, service.Code, service.Name, service.Description, service.BasePrice, service.ServiceLineId, service.ServiceLine.Code, service.ServiceLine.Name, service.IsActive, service.CreatedAtUtc, service.UpdatedAtUtc, service.CreatedByUserId, service.UpdatedByUserId, service.Version);
     private static ServiceInput Validate(string? code, string? name, string? description, decimal? basePrice)
     {
         var errors = new Dictionary<string, string[]>();

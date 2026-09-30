@@ -55,7 +55,7 @@ public sealed class QuoteApiTests
         var customer = await Send<CustomerDetailResponse>(admin, HttpMethod.Post, "/api/customers", new CreateCustomerRequest("Quote Customer", null, "04.252.011/0001-10", null));
         var unit = await Send<UnitMutationResponse>(admin, HttpMethod.Post, $"/api/customers/{customer.Id}/units", new CreateUnitRequest("Head Office", "Main Street", "1", null, null, "Sao Paulo", "SP", null, true, customer.Version));
         await Send<ContactMutationResponse>(admin, HttpMethod.Post, $"/api/customers/{customer.Id}/contacts", new CreateContactRequest("Commercial contact", null, "contact@example.test", null, true, unit.Version));
-        var service = await Send<ServiceDetailResponse>(admin, HttpMethod.Post, "/api/services", new CreateServiceRequest("PGR", "Risk Program", null, 100m));
+        var service = await Send<ServiceDetailResponse>(admin, HttpMethod.Post, "/api/services", new CreateServiceRequest("PGR", "Risk Program", null, 100m, ServiceLineTestData.SstId));
         var quote = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, "/api/quotes", new CreateQuoteRequest(customer.Id, [new QuoteItemRequest(null, service.Id)], null, null, null, null));
         Assert.StartsWith("ORC-", quote.Number); Assert.Equal(QuoteStatus.Draft, quote.Status); Assert.Equal(customer.LegalName, quote.CustomerLegalNameSnapshot); Assert.Equal(service.Name, quote.Items.Single().ServiceNameSnapshot);
         var updated = await Send<QuoteDetailResponse>(admin, HttpMethod.Put, $"/api/quotes/{quote.Id}", new UpdateQuoteRequest(customer.Id, quote.Items.Select(x => new QuoteItemRequest(x.Id, x.ServiceId)).ToList(), 350m, QuotePaymentType.Cash, null, null, quote.Version, 20, QuoteRiskDegree.Two, unit.Unit.Id));
@@ -93,7 +93,7 @@ public sealed class QuoteApiTests
     {
         using var factory = new IdentityWebApplicationFactory(); using var admin = await ReadyAdmin(factory); var customer = await Customer(admin); var service = await Service(admin, "PGR", "Original Service");
         var quote = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, "/api/quotes", new CreateQuoteRequest(customer.Id, [new QuoteItemRequest(null, service.Id)], 100m, QuotePaymentType.Cash, null, null));
-        var changedService = await Send<ServiceDetailResponse>(admin, HttpMethod.Put, $"/api/services/{service.Id}", new UpdateServiceRequest(service.Code, "Changed Service", null, service.BasePrice, service.Version));
+        var changedService = await Send<ServiceDetailResponse>(admin, HttpMethod.Put, $"/api/services/{service.Id}", new UpdateServiceRequest(service.Code, "Changed Service", null, service.BasePrice, ServiceLineTestData.SstId, service.Version));
         var updated = await Send<QuoteDetailResponse>(admin, HttpMethod.Put, $"/api/quotes/{quote.Id}", new UpdateQuoteRequest(customer.Id, quote.Items.Select(x => new QuoteItemRequest(x.Id, x.ServiceId)).ToList(), 110m, QuotePaymentType.Cash, null, null, quote.Version));
         Assert.Equal("Original Service", updated.Items.Single().ServiceNameSnapshot);
         Assert.Equal(HttpStatusCode.Conflict, (await SendResponse(admin, HttpMethod.Put, $"/api/quotes/{quote.Id}", new UpdateQuoteRequest(customer.Id, [], 120m, QuotePaymentType.Cash, null, null, quote.Version))).StatusCode);
@@ -155,9 +155,9 @@ public sealed class QuoteApiTests
         var cancelled = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/visits/{second.CurrentVisit!.Id}/cancel", new { }); Assert.Equal(QuoteVisitStatus.Cancelled, cancelled.CurrentVisit!.Status);
     }
 
-    private static async Task<HttpClient> ReadyAdmin(IdentityWebApplicationFactory factory) { var client = IdentityTestClient.Create(factory); await IdentityTestClient.LoginAsync(client); (await SendResponse(client, HttpMethod.Post, "/api/auth/change-password", new ChangePasswordRequest("Bootstrap1!Pass", "Changed1!Password"))).EnsureSuccessStatusCode(); return client; }
+    private static async Task<HttpClient> ReadyAdmin(IdentityWebApplicationFactory factory) { var client = IdentityTestClient.Create(factory); await IdentityTestClient.LoginAsync(client); (await SendResponse(client, HttpMethod.Post, "/api/auth/change-password", new ChangePasswordRequest("Bootstrap1!Pass", "Changed1!Password"))).EnsureSuccessStatusCode(); await ServiceLineTestData.EnableSstForBootstrapOrganizationAsync(factory); return client; }
     private static Task<CustomerDetailResponse> Customer(HttpClient client) => Send<CustomerDetailResponse>(client, HttpMethod.Post, "/api/customers", new CreateCustomerRequest("Quote Customer", null, "04.252.011/0001-10", null));
-    private static Task<ServiceDetailResponse> Service(HttpClient client, string code, string name) => Send<ServiceDetailResponse>(client, HttpMethod.Post, "/api/services", new CreateServiceRequest(code, name, null, 100m));
+    private static Task<ServiceDetailResponse> Service(HttpClient client, string code, string name) => Send<ServiceDetailResponse>(client, HttpMethod.Post, "/api/services", new CreateServiceRequest(code, name, null, 100m, ServiceLineTestData.SstId));
     private static async Task<ApplicationUser> CreateUser(IdentityWebApplicationFactory factory, string role) { using var scope = factory.Services.CreateScope(); var manager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>(); var user = new ApplicationUser { FullName = "Quote Role", UserName = $"quote-{role}@test", Email = $"quote-{role}@test", EmailConfirmed = true, IsActive = true, MustChangePassword = false }; Assert.True((await manager.CreateAsync(user, "Userpass1!Password")).Succeeded); Assert.True((await manager.AddToRoleAsync(user, role)).Succeeded); return user; }
     private static readonly JsonSerializerOptions QuoteJson = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
     private sealed record UnitMutationResponse(CustomerUnitResponse Unit, Guid Version);
@@ -165,4 +165,3 @@ public sealed class QuoteApiTests
     private static async Task<T> Send<T>(HttpClient client, HttpMethod method, string path, object body) { var response = await SendResponse(client, method, path, body); response.EnsureSuccessStatusCode(); return (await response.Content.ReadFromJsonAsync<T>(QuoteJson))!; }
     private static async Task<HttpResponseMessage> SendResponse(HttpClient client, HttpMethod method, string path, object body) { var request = new HttpRequestMessage(method, path) { Content = JsonContent.Create(body) }; request.Headers.Add("X-CSRF-TOKEN", await IdentityTestClient.GetCsrfTokenAsync(client)); return await client.SendAsync(request); }
 }
-

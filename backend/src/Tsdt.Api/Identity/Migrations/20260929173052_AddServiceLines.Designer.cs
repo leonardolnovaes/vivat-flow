@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Tsdt.Api.Identity;
@@ -11,9 +12,11 @@ using Tsdt.Api.Identity;
 namespace Tsdt.Api.Identity.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260929173052_AddServiceLines")]
+    partial class AddServiceLines
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -590,51 +593,6 @@ namespace Tsdt.Api.Identity.Migrations
                     b.ToTable("ServiceLines", (string)null);
                 });
 
-            modelBuilder.Entity("Tsdt.Api.Contracts.Contract", b =>
-                {
-                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
-                    b.Property<decimal>("ApprovedTotalAmount").HasPrecision(18, 2).HasColumnType("numeric(18,2)");
-                    b.Property<string>("CreatedByUserId").IsRequired().HasColumnType("text");
-                    b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
-                    b.Property<Guid>("CustomerId").HasColumnType("uuid");
-                    b.Property<string>("CustomerLegalNameSnapshot").IsRequired().HasMaxLength(200).HasColumnType("character varying(200)");
-                    b.Property<DateOnly?>("EndDate").HasColumnType("date");
-                    b.Property<int?>("InstallmentCount").HasColumnType("integer");
-                    b.Property<string>("Notes").HasMaxLength(2000).HasColumnType("character varying(2000)");
-                    b.Property<Guid>("OrganizationId").HasColumnType("uuid");
-                    b.Property<int>("PaymentType").HasConversion<string>().HasMaxLength(16).HasColumnType("character varying(16)");
-                    b.Property<string>("PaymentTerms").HasMaxLength(2000).HasColumnType("character varying(2000)");
-                    b.Property<Guid>("QuoteId").HasColumnType("uuid");
-                    b.Property<DateOnly?>("StartDate").HasColumnType("date");
-                    b.Property<int>("Status").HasConversion<string>().HasMaxLength(16).HasColumnType("character varying(16)");
-                    b.Property<string>("UpdatedByUserId").IsRequired().HasColumnType("text");
-                    b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
-                    b.Property<Guid>("Version").IsConcurrencyToken().HasColumnType("uuid");
-                    b.HasKey("Id"); b.HasIndex("CustomerId"); b.HasIndex("QuoteId");
-                    b.HasIndex("OrganizationId", "QuoteId").IsUnique().HasFilter("\"Status\" IN ('Draft', 'Active')");
-                    b.HasIndex("OrganizationId", "Status", "UpdatedAtUtc");
-                    b.ToTable("Contracts", null, t => { t.HasCheckConstraint("CK_Contracts_ApprovedTotalAmount_NonNegative", "\"ApprovedTotalAmount\" >= 0"); });
-                });
-
-            modelBuilder.Entity("Tsdt.Api.Contracts.ContractAuditRecord", b =>
-                {
-                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
-                    b.Property<string>("Action").IsRequired().HasMaxLength(80).HasColumnType("character varying(80)");
-                    b.Property<string>("ActorUserId").IsRequired().HasColumnType("text");
-                    b.Property<string>("ChangedFields").HasMaxLength(500).HasColumnType("character varying(500)");
-                    b.Property<Guid>("ContractId").HasColumnType("uuid"); b.Property<DateTimeOffset>("OccurredAtUtc").HasColumnType("timestamp with time zone");
-                    b.HasKey("Id"); b.HasIndex("ContractId", "OccurredAtUtc"); b.ToTable("ContractAuditRecords", (string)null);
-                });
-
-            modelBuilder.Entity("Tsdt.Api.Contracts.ContractItem", b =>
-                {
-                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid"); b.Property<Guid>("ContractId").HasColumnType("uuid"); b.Property<int>("DisplayOrder").HasColumnType("integer");
-                    b.Property<Guid>("QuoteItemId").HasColumnType("uuid"); b.Property<Guid>("ServiceId").HasColumnType("uuid");
-                    b.Property<string>("ServiceCodeSnapshot").IsRequired().HasMaxLength(50).HasColumnType("character varying(50)"); b.Property<string>("ServiceNameSnapshot").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)");
-                    b.Property<Guid>("ServiceLineId").HasColumnType("uuid"); b.Property<string>("ServiceLineCodeSnapshot").IsRequired().HasMaxLength(50).HasColumnType("character varying(50)"); b.Property<string>("ServiceLineNameSnapshot").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)");
-                    b.HasKey("Id"); b.HasIndex("QuoteItemId"); b.HasIndex("ServiceId"); b.HasIndex("ContractId", "DisplayOrder").IsUnique(); b.ToTable("ContractItems", (string)null);
-                });
-
             modelBuilder.Entity("Tsdt.Api.Quotes.Quote", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1133,25 +1091,6 @@ namespace Tsdt.Api.Identity.Migrations
                     b.Navigation("Organization");
 
                     b.Navigation("ServiceLine");
-                });
-
-            modelBuilder.Entity("Tsdt.Api.Contracts.Contract", b =>
-                {
-                    b.HasOne("Tsdt.Api.Customers.Customer", null).WithMany().HasForeignKey("CustomerId").OnDelete(DeleteBehavior.Restrict).IsRequired();
-                    b.HasOne("Tsdt.Api.Platform.Organization", null).WithMany().HasForeignKey("OrganizationId").OnDelete(DeleteBehavior.Restrict).IsRequired();
-                    b.HasOne("Tsdt.Api.Quotes.Quote", null).WithMany().HasForeignKey("QuoteId").OnDelete(DeleteBehavior.Restrict).IsRequired();
-                });
-
-            modelBuilder.Entity("Tsdt.Api.Contracts.ContractAuditRecord", b =>
-                {
-                    b.HasOne("Tsdt.Api.Contracts.Contract", "Contract").WithMany().HasForeignKey("ContractId").OnDelete(DeleteBehavior.Restrict).IsRequired(); b.Navigation("Contract");
-                });
-
-            modelBuilder.Entity("Tsdt.Api.Contracts.ContractItem", b =>
-                {
-                    b.HasOne("Tsdt.Api.Contracts.Contract", "Contract").WithMany("Items").HasForeignKey("ContractId").OnDelete(DeleteBehavior.Restrict).IsRequired();
-                    b.HasOne("Tsdt.Api.Quotes.QuoteItem", null).WithMany().HasForeignKey("QuoteItemId").OnDelete(DeleteBehavior.Restrict).IsRequired();
-                    b.HasOne("Tsdt.Api.Services.Service", null).WithMany().HasForeignKey("ServiceId").OnDelete(DeleteBehavior.Restrict).IsRequired(); b.Navigation("Contract");
                 });
 
             modelBuilder.Entity("Tsdt.Api.Quotes.Quote", b =>
