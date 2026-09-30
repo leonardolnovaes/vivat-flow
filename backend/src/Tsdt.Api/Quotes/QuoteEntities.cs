@@ -52,6 +52,9 @@ public sealed class QuoteItem
     public Guid ServiceId { get; set; }
     public required string ServiceCodeSnapshot { get; set; }
     public required string ServiceNameSnapshot { get; set; }
+    public Guid ServiceLineIdSnapshot { get; set; }
+    public required string ServiceLineCodeSnapshot { get; set; }
+    public required string ServiceLineNameSnapshot { get; set; }
     public int DisplayOrder { get; set; }
     public Quote Quote { get; set; } = null!;
     public Service Service { get; set; } = null!;

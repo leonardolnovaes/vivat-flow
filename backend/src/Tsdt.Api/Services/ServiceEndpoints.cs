@@ -92,7 +92,8 @@ public static partial class ServiceEndpoints
         if (service.Version != request.ExpectedVersion) return Stale();
         if (!await IsEnabledServiceLineAsync(db, organizationId, request.ServiceLineId)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["serviceLineId"] = ["Selecione uma linha de serviÃ§o ativa habilitada para sua organizaÃ§Ã£o."] });
         if (service.Code != input.Code && await db.Services.AnyAsync(other => other.OrganizationId == organizationId && other.Id != id && other.Code == input.Code)) return DuplicateCode();
-        service.Code = input.Code!; service.Name = input.Name!; service.Description = input.Description; service.BasePrice = input.BasePrice; service.ServiceLineId = request.ServiceLineId;
+        var serviceLine = await db.ServiceLines.SingleAsync(line => line.Id == request.ServiceLineId);
+        service.Code = input.Code!; service.Name = input.Name!; service.Description = input.Description; service.BasePrice = input.BasePrice; service.ServiceLineId = request.ServiceLineId; service.ServiceLine = serviceLine;
         Touch(service, GetActor(context)); AddAudit(db, service.Id, service.UpdatedByUserId, "SERVICE_UPDATED", "Code,Name,Description,BasePrice");
         return await SaveAsync(db, () => Results.Ok(ToDetail(service)));
     }
@@ -103,7 +104,7 @@ public static partial class ServiceEndpoints
     {
         if (!await ValidateAntiforgeryAsync(context, antiforgery)) return CsrfFailure();
         var organizationId = TenantContext.OrganizationId(context);
-        var service = await db.Services.SingleOrDefaultAsync(service => service.Id == id && service.OrganizationId == organizationId);
+        var service = await db.Services.Include(item => item.ServiceLine).SingleOrDefaultAsync(service => service.Id == id && service.OrganizationId == organizationId);
         if (service is null) return Results.NotFound();
         if (service.Version != request.ExpectedVersion) return Stale();
         if (service.IsActive == active) return Results.Ok(ToDetail(service));

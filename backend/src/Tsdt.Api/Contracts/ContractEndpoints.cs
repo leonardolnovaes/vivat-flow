@@ -65,7 +65,7 @@ public static class ContractEndpoints
         {
             Id = Guid.NewGuid(), ContractId = contract.Id, QuoteItemId = item.Id, ServiceId = item.ServiceId,
             ServiceCodeSnapshot = item.ServiceCodeSnapshot, ServiceNameSnapshot = item.ServiceNameSnapshot,
-            ServiceLineId = item.Service.ServiceLineId, ServiceLineCodeSnapshot = item.Service.ServiceLine.Code, ServiceLineNameSnapshot = item.Service.ServiceLine.Name,
+            ServiceLineId = item.ServiceLineIdSnapshot, ServiceLineCodeSnapshot = item.ServiceLineCodeSnapshot, ServiceLineNameSnapshot = item.ServiceLineNameSnapshot,
             DisplayOrder = item.DisplayOrder
         }).ToList();
         db.Contracts.Add(contract);
