@@ -15,7 +15,20 @@ public static class ServiceLineEndpoints
         }).RequireAuthorization();
 
         var platform = app.MapGroup("/api/platform/organizations/{organizationId:guid}/service-lines").RequireAuthorization(AuthorizationPolicies.PlatformAdministrator);
-        platform.MapGet("", async (Guid organizationId, ApplicationDbContext db) => !await db.Organizations.AnyAsync(item => item.Id == organizationId) ? Results.NotFound() : Results.Ok(await db.OrganizationServiceLines.AsNoTracking().Where(item => item.OrganizationId == organizationId).Select(item => new PlatformOrganizationServiceLineResponse(item.ServiceLine.Id, item.ServiceLine.Code, item.ServiceLine.Name, item.ServiceLine.IsActive)).ToListAsync()));
+        platform.MapGet("", async (Guid organizationId, ApplicationDbContext db) =>
+        {
+            if (!await db.Organizations.AnyAsync(item => item.Id == organizationId)) return Results.NotFound();
+
+            return Results.Ok(await db.ServiceLines.AsNoTracking()
+                .OrderBy(item => item.Name).ThenBy(item => item.Code)
+                .Select(item => new PlatformOrganizationServiceLineResponse(
+                    item.Id,
+                    item.Code,
+                    item.Name,
+                    item.IsActive,
+                    db.OrganizationServiceLines.Any(configuration => configuration.OrganizationId == organizationId && configuration.ServiceLineId == item.Id)))
+                .ToListAsync());
+        });
         platform.MapPost("/{serviceLineId:guid}", async (Guid organizationId, Guid serviceLineId, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) =>
         {
             try { await antiforgery.ValidateRequestAsync(context); } catch (AntiforgeryValidationException) { return Results.BadRequest(); }
@@ -31,4 +44,4 @@ public static class ServiceLineEndpoints
     }
 }
 public sealed record TenantServiceLineResponse(Guid Id, string Code, string Name);
-public sealed record PlatformOrganizationServiceLineResponse(Guid Id, string Code, string Name, bool IsActive);
+public sealed record PlatformOrganizationServiceLineResponse(Guid Id, string Code, string Name, bool IsActive, bool IsEnabled);

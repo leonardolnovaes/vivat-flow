@@ -70,8 +70,30 @@ public sealed class AuthenticationTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
         Assert.Contains("mustChangePassword", json);
+        Assert.Contains("organization", json);
         Assert.DoesNotContain("passwordHash", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("securityStamp", json, StringComparison.OrdinalIgnoreCase);
+
+        var profile = await response.Content.ReadFromJsonAsync<CurrentUserResponse>();
+        Assert.NotNull(profile?.Organization);
+        Assert.Equal("Organização inicial", profile.Organization.Name);
+    }
+
+    [Fact]
+    public async Task Platform_administrator_session_does_not_expose_a_tenant_organization()
+    {
+        using var factory = new IdentityWebApplicationFactory();
+        using var scope = factory.Services.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<ApplicationUser>>();
+        var platformAdministrator = new ApplicationUser { FullName = "Platform Administrator", UserName = "platform@example.test", Email = "platform@example.test", EmailConfirmed = true, IsActive = true, MustChangePassword = false, IsPlatformAdministrator = true };
+        Assert.True((await userManager.CreateAsync(platformAdministrator, "Platform1!Password")).Succeeded);
+
+        using var client = IdentityTestClient.Create(factory);
+        Assert.Equal(HttpStatusCode.OK, (await IdentityTestClient.LoginAsync(client, platformAdministrator.Email!, "Platform1!Password")).StatusCode);
+
+        var profile = await (await client.GetAsync("/api/auth/me")).Content.ReadFromJsonAsync<CurrentUserResponse>();
+        Assert.True(profile!.IsPlatformAdministrator);
+        Assert.Null(profile.Organization);
     }
 
     [Fact]

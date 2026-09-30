@@ -5,10 +5,10 @@ import { LoadingState } from '../../components/LoadingState'
 import { QuoteDetailView, QuoteWorkspace } from './QuoteCommercialViews'
 import { createCustomer, getCustomer, listCustomers } from '../customers/customerApi'
 import type { CustomerSummary, Unit } from '../customers/types'
-import { listServices } from '../services/serviceApi'
-import type { ServiceSummary } from '../services/types'
+import { listServiceLines, listServices } from '../services/serviceApi'
+import type { ServiceLine, ServiceSummary } from '../services/types'
 import { createQuote, getEligibleProfessionals, getQuote, getQuoteApprovalValidation, getQuoteSummary, listQuotes, sendForApproval, updateQuote } from './quoteApi'
-import type { EligibleProfessional, PaymentType, Quote, QuoteInput, QuoteList, QuoteStatus, RiskDegree } from './types'
+import type { EligibleProfessional, PaymentType, Quote, QuoteInput, QuoteItem, QuoteList, QuoteStatus, RiskDegree } from './types'
 
 type Props = { path: string; go: (path: string, replace?: boolean) => void; onSessionExpired: () => void }
 type Errors = Record<string, string[]>
@@ -53,6 +53,8 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerSummary | null>(null)
   const [query, setQuery] = useState('')
   const [services, setServices] = useState<ServiceSummary[]>([])
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([])
+  const [existingItems, setExistingItems] = useState<Record<string, QuoteItem>>({})
   const [professionals, setProfessionals] = useState<EligibleProfessional[]>([])
   const [units, setUnits] = useState<Unit[]>([])
   const [unitsLoaded, setUnitsLoaded] = useState(false)
@@ -71,8 +73,8 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
   }
 
   useEffect(() => {
-    void listServices(new URLSearchParams({ page: '1', pageSize: '100', isActive: 'true' }))
-      .then(result => setServices(result.items))
+    void Promise.all([listServices(new URLSearchParams({ page: '1', pageSize: '100', isActive: 'true' })), listServiceLines()])
+      .then(([result, lines]) => { setServices(result.items); setServiceLines(lines) })
       .catch(error => setNotice(message(error, onSessionExpired, 'Não foi possível carregar os serviços.')))
   }, [onSessionExpired])
   useEffect(() => { void getEligibleProfessionals().then(setProfessionals).catch(error => setNotice(message(error, onSessionExpired, 'Não foi possível carregar os profissionais.'))) }, [onSessionExpired])
@@ -95,6 +97,7 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
         const customer = await getCustomer(quote.customerId)
         setSelectedCustomer(customer)
         setForm({ customerId: quote.customerId, items: quote.items.map(item => ({ id: item.id, serviceId: item.serviceId })), totalAmount: quote.totalAmount?.toString() ?? '', paymentType: quote.paymentType ?? '', installmentCount: quote.installmentCount?.toString() ?? '', employeeCount: quote.employeeCount?.toString() ?? '', riskDegree: quote.riskDegree ?? '', serviceUnitId: quote.serviceUnitId ?? '', responsibleUserId: quote.responsibleUserId ?? '', notes: quote.notes ?? '' })
+        setExistingItems(Object.fromEntries(quote.items.map(item => [item.id, item])))
         setVersion(quote.version)
         setUnits(customer.units.filter(unit => unit.isActive))
         setUnitsLoaded(true)
@@ -135,6 +138,10 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
     } finally { setPending(false) }
   }
 
+  const enabledServiceLineIds = new Set(serviceLines.map(line => line.id))
+  const selectableServices = services.filter(service => enabledServiceLineIds.has(service.serviceLineId))
+  const servicesByLine = serviceLines.map(line => ({ line, services: selectableServices.filter(service => service.serviceLineId === line.id) })).filter(group => group.services.length > 0)
+
   return <section className="card form-card quote-form-card">
     <h2>{id ? 'Editar orçamento' : 'Novo orçamento'}</h2>
     {notice && <p className="notice" role="status">{notice}</p>}
@@ -146,10 +153,10 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
         <Field label="Unidade/local do serviço" error={errors.serviceUnitId}><select value={form.serviceUnitId} disabled={!form.customerId || !units.length} onChange={event => setForm(current => ({ ...current, serviceUnitId: event.target.value }))}><option value="">{!form.customerId ? 'Selecione um cliente primeiro' : units.length ? 'Selecione' : 'Nenhuma unidade ativa'}</option>{units.map(unit => <option key={unit.id} value={unit.id}>{unit.name} · {address(unit)}</option>)}</select></Field>
         <Field label="Quantidade de funcionários" error={errors.employeeCount}><input type="number" min="1" step="1" value={form.employeeCount} onChange={event => setForm(current => ({ ...current, employeeCount: event.target.value }))} /></Field>
         <Field label="Grau de risco" error={errors.riskDegree}><select value={form.riskDegree} onChange={event => setForm(current => ({ ...current, riskDegree: event.target.value as RiskDegree | '' }))}><option value="">Selecione</option>{Object.entries(risks).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
-        <Field className="quote-add-service" label="Adicionar serviço" error={errors.items}><select defaultValue="" onChange={event => { const serviceId = event.target.value; if (serviceId && !form.items.some(item => item.serviceId === serviceId)) setForm(current => ({ ...current, items: [...current.items, { serviceId }] })); event.target.value = '' }}><option value="">Selecione um serviço ativo</option>{services.map(service => <option key={service.id} value={service.id}>{service.code} · {service.name}</option>)}</select></Field>
+        <Field className="quote-add-service" label="Adicionar serviço *" error={errors.items}><select defaultValue="" disabled={serviceLines.length === 0 || servicesByLine.length === 0} onChange={event => { const serviceId = event.target.value; if (serviceId && !form.items.some(item => item.serviceId === serviceId)) setForm(current => ({ ...current, items: [...current.items, { serviceId }] })); event.target.value = '' }}><option value="">{serviceLines.length === 0 ? 'Nenhuma linha de serviço habilitada' : servicesByLine.length === 0 ? 'Nenhum serviço ativo disponível' : 'Selecione um serviço ativo'}</option>{servicesByLine.map(({ line, services: lineServices }) => <optgroup key={line.id} label={`${line.code} · ${line.name}`}>{lineServices.map(service => <option key={service.id} value={service.id}>{service.code} · {service.name}</option>)}</optgroup>)}</select></Field>
       </section>
       {form.customerId && unitsLoaded && !units.length && <div className="unit-empty" role="status"><span>Este cliente não possui uma unidade ativa cadastrada.</span><button type="button" className="secondary" onClick={() => go(`/clientes/${form.customerId}`)}>Completar cadastro do cliente</button></div>}
-      <section className="selected-services" aria-label="Serviços adicionados"><h3>Serviços adicionados</h3>{form.items.length === 0 ? <p>Nenhum serviço adicionado.</p> : <div className="selected-service-grid">{form.items.map(item => { const service = services.find(candidate => candidate.id === item.serviceId); return <div className="selected-service" key={item.id ?? item.serviceId}><div><strong>{service?.name ?? 'Serviço histórico'}</strong><small>{service?.code ?? ''}</small></div><button className="secondary" type="button" onClick={() => setForm(current => ({ ...current, items: current.items.filter(candidate => candidate !== item) }))}>Remover</button></div> })}</div>}</section>
+      <section className="selected-services" aria-label="Serviços adicionados"><h3>Serviços adicionados</h3>{form.items.length === 0 ? <p>Nenhum serviço adicionado.</p> : <div className="selected-service-grid">{form.items.map(item => { const service = services.find(candidate => candidate.id === item.serviceId); const historical = item.id ? existingItems[item.id] : undefined; return <div className="selected-service" key={item.id ?? item.serviceId}><div><strong>{service?.name ?? historical?.serviceNameSnapshot ?? 'Serviço histórico'}</strong><small>{service?.code ?? historical?.serviceCodeSnapshot ?? ''}</small><small className="service-line-label">{service?.serviceLineName ?? historical?.serviceLineName ?? 'Linha de serviço histórica'}</small></div><button className="secondary" type="button" onClick={() => setForm(current => ({ ...current, items: current.items.filter(candidate => candidate !== item) }))}>Remover</button></div> })}</div>}</section>
       <section className="quote-form-grid commercial-fields" aria-label="Condições comerciais"><Field label="Valor total (R$)" error={errors.totalAmount}><input value={form.totalAmount} onChange={event => setForm(current => ({ ...current, totalAmount: event.target.value }))} /></Field><Field label="Condição de pagamento" error={errors.paymentType}><select value={form.paymentType} onChange={event => setForm(current => ({ ...current, paymentType: event.target.value as PaymentType | '' }))}><option value="">Não definida</option><option value="Cash">À vista</option><option value="Installments">Parcelado</option></select></Field>{form.paymentType === 'Installments' && <Field label="Quantidade de parcelas" error={errors.installmentCount}><input value={form.installmentCount} onChange={event => setForm(current => ({ ...current, installmentCount: event.target.value }))} /></Field>}</section>
       <Field className="quote-notes" label="Observações" error={errors.notes}><textarea value={form.notes} onChange={event => setForm(current => ({ ...current, notes: event.target.value }))} /></Field>
       <div className="actions quote-form-actions"><button type="button" className="secondary" onClick={() => go('/orcamentos')}>Cancelar</button><button disabled={pending}>{pending ? 'Salvando...' : 'Salvar rascunho'}</button></div>

@@ -34,7 +34,7 @@ public sealed class IdentityBootstrapper(
         if (existingTenantUsers.Count > 0) await dbContext.SaveChangesAsync(cancellationToken);
 
         var bootstrap = options.Value;
-        if (!await dbContext.Users.AnyAsync(cancellationToken) && !string.IsNullOrWhiteSpace(bootstrap.Email) && !string.IsNullOrWhiteSpace(bootstrap.FullName) && !string.IsNullOrWhiteSpace(bootstrap.Password))
+        if (!await dbContext.Users.AnyAsync(user => !user.IsPlatformAdministrator && user.OrganizationId == organization.Id, cancellationToken) && !string.IsNullOrWhiteSpace(bootstrap.Email) && !string.IsNullOrWhiteSpace(bootstrap.FullName) && !string.IsNullOrWhiteSpace(bootstrap.Password))
         {
             var user = new ApplicationUser { FullName = bootstrap.FullName.Trim(), UserName = bootstrap.Email, Email = bootstrap.Email, EmailConfirmed = true, IsActive = true, MustChangePassword = true, OrganizationId = organization.Id };
             var result = await userManager.CreateAsync(user, bootstrap.Password);
