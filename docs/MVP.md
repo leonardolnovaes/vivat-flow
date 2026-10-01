@@ -26,7 +26,7 @@ A Customer may receive a Quote containing multiple Services, including Services 
 
 The commercial journey is conceptually:
 
-`Customer → Quote → Approval → optional Contract formalization → future execution`
+`Customer → Quote → Approval → Contract formalization and activation → Work Order execution` is the preferred user journey. The API also retains the established direct approved Quote to Work Order path where no governing Contract exists.
 
 A Contract is never auto-created by approval. Contract scope comes from the approved Quote and remains historically stable.
 
@@ -34,7 +34,7 @@ Commercial values may exist, but the initial operational MVP does not implement 
 
 ## Execution flow
 
-Work Orders own execution-specific state: assignment, dates, operational progress, and notes. Management creates a Work Order explicitly from an approved Quote or Active Contract. Operational completion and management closure are separate transitions; Delivery remains independent.
+Work Orders own execution-specific state: assignment, dates, operational progress, and notes. Management creates a Work Order explicitly from an Active Contract in the primary UI. The existing direct approved Quote API path remains available where no governing Contract exists. Operational completion and management closure are separate transitions; Delivery remains independent.
 
 Do not collapse Work Orders into Quote or Contract merely to accelerate implementation. Commercial formalization and operational execution are separate boundaries.
 
@@ -68,6 +68,7 @@ The CORE must not contain behavior keyed to names such as PGR, PCMSO, LTCAT, Cle
 - supplier/partner management unless later required
 - customer portal
 - automatic WhatsApp/email notification engine
+- optional "Copiar mensagem para e-mail" Quote template with Quote context and selected Customer Contact recipients; intended recipients are recorded now, while delivery and template generation are future work
 - eSocial integrations
 - automated document generation/OCR/AI workflows
 - worker medical records or other sensitive health datasets without explicit approved scope
@@ -83,7 +84,7 @@ The MVP should allow an authorized tenant to:
 2. maintain Customers and units;
 3. configure Services under enabled Service Lines;
 4. create and approve a multi-item Quote;
-5. explicitly formalize an approved Quote into a Contract when required;
+5. explicitly formalize and activate an approved Quote into a Contract when formalization is required;
 6. execute future Work Orders without losing tenant or commercial context;
 7. attach future Documents and register Delivery independently from completion;
 8. preserve important audit history and actionable operational visibility.

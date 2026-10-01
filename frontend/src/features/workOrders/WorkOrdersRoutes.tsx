@@ -37,7 +37,7 @@ export function WorkOrdersRoutes(props: Props) {
   const detail = props.path.match(/^\/ordens-servico\/([^/]+)$/)
   const query = new URLSearchParams(search)
   if (props.path === '/ordens-servico') return <List {...props} />
-  if (props.path === '/ordens-servico/novo') return !management(props.user) ? <Empty title="Acesso restrito" text="A criação de OS está disponível para a gestão." go={props.go} /> : !query.has('quoteId') && !query.has('contractId') ? <WorkOrderSourcePicker go={props.go} onSessionExpired={props.onSessionExpired} /> : <Create {...props} quoteId={query.get('quoteId')} contractId={query.get('contractId')} />
+  if (props.path === '/ordens-servico/novo') return !management(props.user) ? <Empty title="Acesso restrito" text="A criação de OS está disponível para a gestão." go={props.go} /> : query.has('quoteId') ? <Empty title="Contrato obrigatório" text="Formalize e ative o contrato antes de criar a OS." go={props.go} /> : !query.has('contractId') ? <WorkOrderSourcePicker go={props.go} onSessionExpired={props.onSessionExpired} /> : <Create {...props} quoteId={query.get('quoteId')} contractId={query.get('contractId')} />
   if (detail) return <Detail {...props} id={detail[1]} />
   return <Empty title="Página não encontrada" text="O endereço informado não corresponde a uma OS." go={props.go} />
 }

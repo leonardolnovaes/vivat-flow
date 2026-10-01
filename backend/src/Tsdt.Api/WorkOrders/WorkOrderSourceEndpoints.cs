@@ -18,7 +18,7 @@ public static class WorkOrderSourceEndpoints
 
     private sealed record SourceRow(Guid Id, WorkOrderSourceType SourceType, Guid QuoteId, Guid? ContractId, string Reference, string CustomerLegalNameSnapshot, string? ServiceAddressSnapshot, string Status, int ServiceCount);
     private sealed record RelatedContract(Guid Id, Guid QuoteId, ContractStatus Status);
-    private sealed record RelatedOrder(Guid Id, Guid QuoteId, string Number);
+    private sealed record RelatedOrder(Guid Id, Guid QuoteId, string Number, WorkOrderStatus Status);
 
     private static async Task<IResult> ListAsync(WorkOrderSourceType? sourceType, string? search, int? page, int? pageSize, HttpContext context, ApplicationDbContext db)
     {
@@ -93,15 +93,19 @@ public static class WorkOrderSourceEndpoints
         var contracts = await db.Contracts.AsNoTracking().Where(item => item.OrganizationId == organizationId && quoteIds.Contains(item.QuoteId) && (item.Status == ContractStatus.Draft || item.Status == ContractStatus.Active))
             .Select(item => new RelatedContract(item.Id, item.QuoteId, item.Status)).ToListAsync();
         var orders = await db.WorkOrders.AsNoTracking().Where(item => item.OrganizationId == organizationId && quoteIds.Contains(item.QuoteId) && item.Status != WorkOrderStatus.Cancelled)
-            .Select(item => new RelatedOrder(item.Id, item.QuoteId, item.Number)).ToListAsync();
+            .Select(item => new RelatedOrder(item.Id, item.QuoteId, item.Number, item.Status)).ToListAsync();
         var governing = contracts.GroupBy(item => item.QuoteId).ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.Status == ContractStatus.Active).ThenBy(item => item.Id).First());
-        var current = orders.GroupBy(item => item.QuoteId).ToDictionary(group => group.Key, group => group.OrderBy(item => item.Id).First());
         return rows.Select(row =>
         {
             governing.TryGetValue(row.QuoteId, out var contract);
-            current.TryGetValue(row.QuoteId, out var order);
+            var order = orders.Where(item => item.QuoteId == row.QuoteId &&
+                (row.SourceType == WorkOrderSourceType.Quote || item.Status != WorkOrderStatus.Closed))
+                .OrderBy(item => item.Id).FirstOrDefault();
             var eligibleStatus = row.SourceType == WorkOrderSourceType.Quote ? row.Status == nameof(QuoteStatus.Approved) : row.Status == nameof(ContractStatus.Active);
-            var canCreate = eligibleStatus && (row.SourceType == WorkOrderSourceType.Contract || contract is null) && order is null && !string.IsNullOrWhiteSpace(row.ServiceAddressSnapshot) && row.ServiceCount > 0;
+            var canCreate = eligibleStatus && (row.SourceType == WorkOrderSourceType.Contract
+                ? WorkOrderRules.CanCreateFromContract(ContractStatus.Active, orders.Where(item => item.QuoteId == row.QuoteId).Select(item => item.Status))
+                : contract is null && order is null) &&
+                !string.IsNullOrWhiteSpace(row.ServiceAddressSnapshot) && row.ServiceCount > 0;
             return new WorkOrderSourceSummaryResponse(row.Id, row.SourceType, row.QuoteId, row.ContractId, row.Reference, row.CustomerLegalNameSnapshot, row.ServiceAddressSnapshot, row.Status, canCreate,
                 row.SourceType == WorkOrderSourceType.Quote ? contract?.Id : null, row.SourceType == WorkOrderSourceType.Quote ? contract?.Status.ToString() : null, order?.Id, order?.Number);
         }).ToList();

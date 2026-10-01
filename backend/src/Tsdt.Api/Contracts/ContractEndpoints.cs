@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.EntityFrameworkCore;
 using Tsdt.Api.Identity;
 using Tsdt.Api.Quotes;
+using Tsdt.Api.Customers;
 
 namespace Tsdt.Api.Contracts;
 
@@ -45,7 +46,7 @@ public static class ContractEndpoints
         if (!await Csrf(context, antiforgery)) return CsrfFailure();
         var inputErrors = ValidateInput(request.StartDate, request.EndDate, request.PaymentTerms, request.Notes);
         if (inputErrors is not null) return Results.ValidationProblem(inputErrors);
-        if (request.Type is null || !Enum.IsDefined(request.Type.Value)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["type"] = ["Selecione o tipo de contrato: Pontual ou Recorrente."] });
+        if (!Enum.IsDefined(request.Kind)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["kind"] = ["Selecione um tipo de contrato válido."] });
         var organizationId = TenantContext.OrganizationId(context);
         var quote = await db.Quotes.Include(item => item.Items).ThenInclude(item => item.Service).ThenInclude(service => service.ServiceLine).SingleOrDefaultAsync(item => item.Id == request.QuoteId && item.OrganizationId == organizationId);
         if (quote is null) return Results.NotFound();
@@ -57,7 +58,7 @@ public static class ContractEndpoints
         var now = DateTimeOffset.UtcNow;
         var contract = new Contract
         {
-            Id = Guid.NewGuid(), QuoteId = quote.Id, CustomerId = quote.CustomerId, CustomerLegalNameSnapshot = quote.CustomerLegalNameSnapshot, Type = request.Type.Value,
+            Id = Guid.NewGuid(), QuoteId = quote.Id, CustomerId = quote.CustomerId, CustomerLegalNameSnapshot = quote.CustomerLegalNameSnapshot, Kind = request.Kind,
             ApprovedTotalAmount = quote.TotalAmount.Value, PaymentType = quote.PaymentType.Value, InstallmentCount = quote.InstallmentCount,
             StartDate = request.StartDate, EndDate = request.EndDate, PaymentTerms = Trim(request.PaymentTerms, 2000), Notes = Trim(request.Notes, 2000),
             CreatedAtUtc = now, UpdatedAtUtc = now, CreatedByUserId = actor, UpdatedByUserId = actor, Version = Guid.NewGuid()
@@ -81,11 +82,13 @@ public static class ContractEndpoints
         if (!await Csrf(context, antiforgery)) return CsrfFailure();
         var errors = ValidateInput(request.StartDate, request.EndDate, request.PaymentTerms, request.Notes);
         if (errors is not null) return Results.ValidationProblem(errors);
+        if (!Enum.IsDefined(request.Kind)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["kind"] = ["Selecione um tipo de contrato válido."] });
         var contract = await TenantContractQuery(db, id, context).Include(item => item.Items).SingleOrDefaultAsync();
         if (contract is null) return Results.NotFound();
         if (contract.Version != request.ExpectedVersion) return Stale();
         if (contract.Status != ContractStatus.Draft) return StateConflict();
         var fields = new List<string>();
+        if (contract.Kind != request.Kind) { contract.Kind = request.Kind; fields.Add("Kind"); }
         if (contract.StartDate != request.StartDate) { contract.StartDate = request.StartDate; fields.Add("StartDate"); }
         if (contract.EndDate != request.EndDate) { contract.EndDate = request.EndDate; fields.Add("EndDate"); }
         var paymentTerms = Trim(request.PaymentTerms, 2000); if (contract.PaymentTerms != paymentTerms) { contract.PaymentTerms = paymentTerms; fields.Add("PaymentTerms"); }
@@ -109,6 +112,7 @@ public static class ContractEndpoints
         if (!allowed) return StateConflict();
         if (requiresStartDate && contract.StartDate is null) return Results.ValidationProblem(new Dictionary<string, string[]> { ["startDate"] = ["Informe a data de início antes de ativar o contrato."] });
         contract.Status = target; Touch(contract, Actor(context)); Audit(db, contract, contract.UpdatedByUserId, action, null);
+        await CustomerActivityService.ReconcileAsync(db, contract.CustomerId, contract.UpdatedByUserId, CustomerActivityService.IsActiveRelationship(target), excludeContractId: contract.Id, cancelledContract: target == ContractStatus.Cancelled);
         try { await db.SaveChangesAsync(); return Results.Ok(ToDetail(contract)); } catch (DbUpdateConcurrencyException) { return Stale(); }
     }
 
@@ -121,8 +125,8 @@ public static class ContractEndpoints
         if (notes?.Trim().Length > 2000) errors["notes"] = ["As observações devem ter no máximo 2.000 caracteres."];
         return errors.Count == 0 ? null : errors;
     }
-    private static ContractSummaryResponse ToSummary(Contract contract) => new(contract.Id, contract.QuoteId, contract.CustomerId, contract.CustomerLegalNameSnapshot, contract.Status, contract.Type, contract.ApprovedTotalAmount, contract.StartDate, contract.EndDate, contract.UpdatedAtUtc);
-    private static ContractDetailResponse ToDetail(Contract contract) => new(contract.Id, contract.QuoteId, contract.CustomerId, contract.CustomerLegalNameSnapshot, contract.Status, contract.Type, contract.ApprovedTotalAmount, contract.PaymentType, contract.InstallmentCount, contract.StartDate, contract.EndDate, contract.PaymentTerms, contract.Notes, contract.CreatedAtUtc, contract.UpdatedAtUtc, contract.Version, contract.Items.OrderBy(item => item.DisplayOrder).Select(item => new ContractItemResponse(item.Id, item.QuoteItemId, item.ServiceId, item.ServiceCodeSnapshot, item.ServiceNameSnapshot, item.ServiceLineId, item.ServiceLineCodeSnapshot, item.ServiceLineNameSnapshot, item.DisplayOrder)).ToList());
+    private static ContractSummaryResponse ToSummary(Contract contract) => new(contract.Id, contract.QuoteId, contract.CustomerId, contract.CustomerLegalNameSnapshot, contract.Status, contract.ApprovedTotalAmount, contract.StartDate, contract.EndDate, contract.UpdatedAtUtc, contract.Kind);
+    private static ContractDetailResponse ToDetail(Contract contract) => new(contract.Id, contract.QuoteId, contract.CustomerId, contract.CustomerLegalNameSnapshot, contract.Status, contract.ApprovedTotalAmount, contract.PaymentType, contract.InstallmentCount, contract.StartDate, contract.EndDate, contract.PaymentTerms, contract.Notes, contract.CreatedAtUtc, contract.UpdatedAtUtc, contract.Version, contract.Items.OrderBy(item => item.DisplayOrder).Select(item => new ContractItemResponse(item.Id, item.QuoteItemId, item.ServiceId, item.ServiceCodeSnapshot, item.ServiceNameSnapshot, item.ServiceLineId, item.ServiceLineCodeSnapshot, item.ServiceLineNameSnapshot, item.DisplayOrder)).ToList(), contract.Kind);
     private static void Touch(Contract contract, string actor) { contract.UpdatedAtUtc = DateTimeOffset.UtcNow; contract.UpdatedByUserId = actor; contract.Version = Guid.NewGuid(); }
     private static void Audit(ApplicationDbContext db, Contract contract, string actor, string action, string? fields) => db.ContractAuditRecords.Add(new ContractAuditRecord { Id = Guid.NewGuid(), ContractId = contract.Id, ActorUserId = actor, Action = action, OccurredAtUtc = DateTimeOffset.UtcNow, ChangedFields = fields });
     private static string Actor(HttpContext context) => context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new UnauthorizedAccessException();

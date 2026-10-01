@@ -44,6 +44,14 @@ public sealed class Quote
     public ApplicationUser? ResponsibleUser { get; set; }
     public List<QuoteItem> Items { get; set; } = [];
     public List<QuoteVisit> Visits { get; set; } = [];
+    public List<QuoteApprovalRecipient> ApprovalRecipients { get; set; } = [];
+}
+public sealed class QuoteApprovalRecipient
+{
+    public Guid QuoteId { get; set; }
+    public Guid CustomerContactId { get; set; }
+    public Quote Quote { get; set; } = null!;
+    public CustomerContact Contact { get; set; } = null!;
 }
 public sealed class QuoteItem
 {
@@ -61,5 +69,5 @@ public sealed class QuoteItem
 }
 public sealed class QuoteAuditRecord { public Guid Id { get; set; } public Guid QuoteId { get; set; } public required string ActorUserId { get; set; } public required string Action { get; set; } public DateTimeOffset OccurredAtUtc { get; set; } public string? ChangedFields { get; set; } public Quote Quote { get; set; } = null!; }
 public enum QuoteVisitStatus { Scheduled, Completed, Cancelled }
-public sealed class QuoteVisit { public Guid Id { get; set; } public Guid QuoteId { get; set; } public required string AssignedUserId { get; set; } public DateTimeOffset ScheduledStart { get; set; } public DateTimeOffset ScheduledEnd { get; set; } public Guid? CustomerUnitId { get; set; } public string? LocationSnapshot { get; set; } public string? Notes { get; set; } public QuoteVisitStatus Status { get; set; } = QuoteVisitStatus.Scheduled; public DateTimeOffset CreatedAtUtc { get; set; } public required string CreatedByUserId { get; set; } public DateTimeOffset UpdatedAtUtc { get; set; } public required string UpdatedByUserId { get; set; } public Quote Quote { get; set; } = null!; public ApplicationUser AssignedUser { get; set; } = null!; }
+public sealed class QuoteVisit { public Guid Id { get; set; } public Guid QuoteId { get; set; } public required string AssignedUserId { get; set; } public DateTimeOffset ScheduledStart { get; set; } public DateTimeOffset? ScheduledEnd { get; set; } public Guid? CustomerUnitId { get; set; } public string? LocationSnapshot { get; set; } public string? Notes { get; set; } public QuoteVisitStatus Status { get; set; } = QuoteVisitStatus.Scheduled; public DateTimeOffset CreatedAtUtc { get; set; } public required string CreatedByUserId { get; set; } public DateTimeOffset UpdatedAtUtc { get; set; } public required string UpdatedByUserId { get; set; } public Quote Quote { get; set; } = null!; public ApplicationUser AssignedUser { get; set; } = null!; }
 public sealed class QuoteNumberCounter { public int Year { get; set; } public int LastNumber { get; set; } }
