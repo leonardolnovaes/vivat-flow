@@ -80,6 +80,22 @@ public partial class PostMergeReviewHardening : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        migrationBuilder.Sql(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM "WorkOrders"
+                    WHERE "Status" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')
+                    GROUP BY "OrganizationId", "QuoteId"
+                    HAVING COUNT(*) > 1
+                ) THEN
+                    RAISE EXCEPTION 'Cannot restore quote-scoped Work Order uniqueness while multiple unfinished Work Orders exist for a quote.';
+                END IF;
+            END $$;
+            """);
+
         migrationBuilder.DropIndex(
             name: "IX_WorkOrders_OrganizationId_ContractId",
             table: "WorkOrders");

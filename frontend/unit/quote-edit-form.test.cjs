@@ -180,3 +180,12 @@ test('an obsolete non-Draft response cannot redirect after navigation to another
   assert.deepEqual(navigation, [])
   await act(async () => root.unmount())
 })
+
+test('a pending non-Draft load cannot redirect after leaving the edit screen', async () => {
+  let resolveLoad
+  quoteLoads.push(new Promise(resolve => { resolveLoad = resolve }))
+  const { root, navigation } = await render()
+  await act(async () => root.unmount())
+  await act(async () => { resolveLoad(quote('version-old', [item('item-old', 'service-1')], 'AwaitingApproval')); await flush() })
+  assert.deepEqual(navigation, [])
+})

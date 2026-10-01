@@ -119,7 +119,11 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
     } catch (error) { if (generation === quoteLoadGeneration.current) setNotice(message(error, onSessionExpired, 'Não foi possível carregar o formulário.')) }
     finally { if (generation === quoteLoadGeneration.current) setLoadingQuote(false) }
   }, [id, onSessionExpired, go])
-  useEffect(() => { if (id) void Promise.resolve().then(reloadQuote) }, [id, reloadQuote])
+  useEffect(() => {
+    if (!id) return
+    void Promise.resolve().then(reloadQuote)
+    return () => { quoteLoadGeneration.current++ }
+  }, [id, reloadQuote])
 
   const choose = async (customer: CustomerSummary, unitId = '') => {
     setForm(current => ({ ...current, customerId: customer.id, serviceUnitId: unitId }))
