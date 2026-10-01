@@ -1285,14 +1285,13 @@ namespace Tsdt.Api.Identity.Migrations
                     b.HasIndex("QuoteId");
 
                     b.HasIndex("OrganizationId", "ContractId")
-                        .HasFilter("\"ContractId\" IS NOT NULL");
+                        .IsUnique()
+                        .HasFilter("\"ContractId\" IS NOT NULL AND \"Status\" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')");
 
                     b.HasIndex("OrganizationId", "Number")
                         .IsUnique();
 
-                    b.HasIndex("OrganizationId", "QuoteId")
-                        .IsUnique()
-                        .HasFilter("\"Status\" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')");
+                    b.HasIndex("OrganizationId", "QuoteId");
 
                     b.HasIndex("OrganizationId", "AssignedUserId", "UpdatedAtUtc");
 
