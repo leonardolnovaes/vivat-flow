@@ -900,6 +900,20 @@ namespace Tsdt.Api.Identity.Migrations
                     b.Property<Guid>("CustomerContactId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("EmailSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<string>("NameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("PhoneSnapshot")
+                        .HasMaxLength(11)
+                        .HasColumnType("character varying(11)");
+
                     b.HasKey("QuoteId", "CustomerContactId");
 
                     b.HasIndex("CustomerContactId");
