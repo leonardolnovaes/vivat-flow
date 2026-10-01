@@ -10,7 +10,7 @@ The historical `Tsdt` technical namespace remains in the current codebase. Produ
 
 ## Core versus vertical extensions
 
-The CORE contains concepts reusable across service businesses: Identity, Organizations, Customers, Service Lines, Service Catalog, Quotes, Contracts, future Work Orders, Documents, Notifications, Audit, and related platform capabilities.
+The CORE contains concepts reusable across service businesses: Identity, Organizations, Customers, Service Lines, Service Catalog, Quotes, Contracts, Work Orders, Documents, Notifications, Audit, and related platform capabilities.
 
 Vertical-specific SST, Cleaning, Flooring, clinic, or other rules must not contaminate the CORE. Add vertical behavior only through explicit configuration or extensions when a generic model cannot represent it cleanly.
 
@@ -39,7 +39,7 @@ See [PRODUCT_MODEL.md](PRODUCT_MODEL.md) for canonical domain boundaries.
 
 Tenant-owned aggregate roots are resolved server-side from the authenticated user's Organization. Backend authorization and tenant filters are authoritative; the frontend is not a security boundary.
 
-Current tenant ownership covers Customers, Services, Quotes, Contracts, eligible-professional lookups, and their owned child records. Future operational aggregates must implement the same boundary before release.
+Current tenant ownership covers Customers, Services, Quotes, Contracts, Work Orders, eligible-professional lookups, and their owned child records. Future operational aggregates must implement the same boundary before release.
 
 Platform Administrators are separate from tenant users. Platform access must never imply operational tenant access.
 
