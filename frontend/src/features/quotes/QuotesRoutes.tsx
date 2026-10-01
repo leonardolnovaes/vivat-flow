@@ -21,10 +21,10 @@ Object.assign(statuses, { ChangesRequested: 'Alterações solicitadas', Expired:
 
 export function QuotesRoutes(props: Props) {
   if (props.path === '/orcamentos') return <QuoteWorkspace {...props} />
-  if (props.path === '/orcamentos/novo') return <Form {...props} />
+  if (props.path === '/orcamentos/novo') return <QuoteEditForm {...props} />
   const edit = props.path.match(/^\/orcamentos\/([^/]+)\/editar$/)
   const detail = props.path.match(/^\/orcamentos\/([^/]+)$/)
-  return edit ? <Form {...props} id={edit[1]} /> : detail ? <QuoteDetailView {...props} id={detail[1]} /> : <section className="card"><h2>Página não encontrada</h2></section>
+  return edit ? <QuoteEditForm {...props} id={edit[1]} /> : detail ? <QuoteDetailView {...props} id={detail[1]} /> : <section className="card"><h2>Página não encontrada</h2></section>
 }
 
 export function List({ go, onSessionExpired }: Props) {
@@ -47,7 +47,7 @@ export function List({ go, onSessionExpired }: Props) {
   </>
 }
 
-function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
+export function QuoteEditForm({ id, go, onSessionExpired }: Props & { id?: string }) {
   const [form, setForm] = useState<QuoteInput>(blank)
   const [version, setVersion] = useState('')
   const [customerResults, setCustomerResults] = useState<CustomerSummary[]>([])
@@ -66,6 +66,8 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
   const [loadingQuote, setLoadingQuote] = useState(Boolean(id))
   const [stale, setStale] = useState(false)
   const summary = useRef<HTMLDivElement>(null)
+  const sessionExpired = useRef(onSessionExpired)
+  useEffect(() => { sessionExpired.current = onSessionExpired }, [onSessionExpired])
 
   const loadUnits = async (customerId: string) => {
     setUnitsLoaded(false)
@@ -109,9 +111,9 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
       setErrors({})
       setStale(false)
       setNotice('')
-    } catch (error) { setNotice(message(error, onSessionExpired, 'Não foi possível carregar o formulário.')) }
+    } catch (error) { setNotice(message(error, sessionExpired.current, 'Não foi possível carregar o formulário.')) }
     finally { setLoadingQuote(false) }
-  }, [id, onSessionExpired])
+  }, [id])
   useEffect(() => { if (id) void Promise.resolve().then(reloadQuote) }, [id, reloadQuote])
 
   const choose = async (customer: CustomerSummary) => {
@@ -165,7 +167,7 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
     {notice && <p className="notice" role="status">{notice}</p>}
     {stale && <div className="error-panel" role="alert"><p>Este orçamento foi alterado. Carregue os dados mais recentes antes de salvar. As alterações não salvas serão substituídas.</p><button type="button" className="secondary" disabled={loadingQuote} onClick={() => void reloadQuote()}>{loadingQuote ? 'Carregando...' : 'Carregar dados recentes'}</button></div>}
     {Object.keys(errors).length > 0 && <ValidationSummary errors={errors} reference={summary} title="Corrija os seguintes campos:" />}
-    <form className="quote-edit-form" onSubmit={save}>
+    <form className="quote-edit-form" onSubmit={save} inert={pending || loadingQuote || stale} aria-busy={pending || loadingQuote}>
       <section className="quote-form-grid" aria-label="Dados do orçamento">
         <div className="quote-customer-row"><Field label="Cliente *" error={errors.customerId}><CustomerSearch query={query} setQuery={setQuery} results={customerResults} selected={selectedCustomer} choose={choose} clear={clearCustomer} /></Field><button type="button" className="secondary quick-customer" onClick={() => setQuick(true)}>+ Cadastrar cliente rapidamente</button></div>
         <Field label="Responsável pelo orçamento" error={errors.responsibleUserId}><select value={form.responsibleUserId} onChange={event => setForm(current => ({ ...current, responsibleUserId: event.target.value }))}><option value="">Não definido</option>{professionals.map(person => <option key={person.id} value={person.id}>{person.fullName} · {person.email}</option>)}</select></Field>
