@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { ApiError } from '../../api'
 import { LoadingState } from '../../components/LoadingState'
@@ -8,6 +8,7 @@ import type { CustomerSummary, Unit } from '../customers/types'
 import { listServiceLines, listServices } from '../services/serviceApi'
 import type { ServiceLine, ServiceSummary } from '../services/types'
 import { createQuote, getEligibleProfessionals, getQuote, getQuoteApprovalValidation, getQuoteSummary, listQuotes, sendForApproval, updateQuote } from './quoteApi'
+import { editState } from './quoteEdit'
 import type { EligibleProfessional, PaymentType, Quote, QuoteInput, QuoteItem, QuoteList, QuoteStatus, RiskDegree } from './types'
 
 type Props = { path: string; go: (path: string, replace?: boolean) => void; onSessionExpired: () => void }
@@ -62,6 +63,8 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
   const [notice, setNotice] = useState('')
   const [quick, setQuick] = useState(false)
   const [pending, setPending] = useState(false)
+  const [loadingQuote, setLoadingQuote] = useState(Boolean(id))
+  const [stale, setStale] = useState(false)
   const summary = useRef<HTMLDivElement>(null)
 
   const loadUnits = async (customerId: string) => {
@@ -89,21 +92,27 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
     return () => window.clearTimeout(timer)
   }, [query])
 
-  useEffect(() => {
+  const reloadQuote = useCallback(async () => {
     if (!id) return
-    void (async () => {
-      try {
-        const quote = await getQuote(id)
-        const customer = await getCustomer(quote.customerId)
-        setSelectedCustomer(customer)
-        setForm({ customerId: quote.customerId, items: quote.items.map(item => ({ id: item.id, serviceId: item.serviceId })), totalAmount: quote.totalAmount?.toString() ?? '', paymentType: quote.paymentType ?? '', installmentCount: quote.installmentCount?.toString() ?? '', employeeCount: quote.employeeCount?.toString() ?? '', riskDegree: quote.riskDegree ?? '', serviceUnitId: quote.serviceUnitId ?? '', responsibleUserId: quote.responsibleUserId ?? '', notes: quote.notes ?? '' })
-        setExistingItems(Object.fromEntries(quote.items.map(item => [item.id, item])))
-        setVersion(quote.version)
-        setUnits(customer.units.filter(unit => unit.isActive))
-        setUnitsLoaded(true)
-      } catch (error) { setNotice(message(error, onSessionExpired, 'Não foi possível carregar o formulário.')) }
-    })()
+    setLoadingQuote(true)
+    setVersion('')
+    try {
+      const quote = await getQuote(id)
+      const customer = await getCustomer(quote.customerId)
+      const state = editState(quote)
+      setSelectedCustomer(customer)
+      setForm(state.form)
+      setExistingItems(state.existingItems)
+      setVersion(state.version)
+      setUnits(customer.units.filter(unit => unit.isActive))
+      setUnitsLoaded(true)
+      setErrors({})
+      setStale(false)
+      setNotice('')
+    } catch (error) { setNotice(message(error, onSessionExpired, 'Não foi possível carregar o formulário.')) }
+    finally { setLoadingQuote(false) }
   }, [id, onSessionExpired])
+  useEffect(() => { if (id) void Promise.resolve().then(reloadQuote) }, [id, reloadQuote])
 
   const choose = async (customer: CustomerSummary) => {
     setForm(current => ({ ...current, customerId: customer.id, serviceUnitId: '' }))
@@ -129,11 +138,20 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
-    if (pending) return
+    if (pending || stale || (id && !version)) return
     setPending(true); setErrors({}); setNotice('')
-    try { const quote = id ? await updateQuote(id, form, version) : await createQuote(form); go(`/orcamentos/${quote.id}`, true) }
+    try {
+      const quote = id ? await updateQuote(id, form, version) : await createQuote(form)
+      if (!id) { go(`/orcamentos/${quote.id}`, true); return }
+      const state = editState(quote)
+      setForm(state.form)
+      setExistingItems(state.existingItems)
+      setVersion(state.version)
+      setNotice('Rascunho salvo com sucesso.')
+    }
     catch (error) {
-      if (error instanceof ApiError && Object.keys(error.errors).length) { setErrors(error.errors); requestAnimationFrame(() => summary.current?.focus()) }
+      if (error instanceof ApiError && error.status === 409) setStale(true)
+      else if (error instanceof ApiError && Object.keys(error.errors).length) { setErrors(error.errors); requestAnimationFrame(() => summary.current?.focus()) }
       else setNotice(message(error, onSessionExpired, 'Não foi possível salvar o orçamento.'))
     } finally { setPending(false) }
   }
@@ -145,6 +163,7 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
   return <section className="card form-card quote-form-card">
     <h2>{id ? 'Editar orçamento' : 'Novo orçamento'}</h2>
     {notice && <p className="notice" role="status">{notice}</p>}
+    {stale && <div className="error-panel" role="alert"><p>Este orçamento foi alterado. Carregue os dados mais recentes antes de salvar. As alterações não salvas serão substituídas.</p><button type="button" className="secondary" disabled={loadingQuote} onClick={() => void reloadQuote()}>{loadingQuote ? 'Carregando...' : 'Carregar dados recentes'}</button></div>}
     {Object.keys(errors).length > 0 && <ValidationSummary errors={errors} reference={summary} title="Corrija os seguintes campos:" />}
     <form className="quote-edit-form" onSubmit={save}>
       <section className="quote-form-grid" aria-label="Dados do orçamento">
@@ -159,7 +178,7 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
       <section className="selected-services" aria-label="Serviços adicionados"><h3>Serviços adicionados</h3>{form.items.length === 0 ? <p>Nenhum serviço adicionado.</p> : <div className="selected-service-grid">{form.items.map(item => { const service = services.find(candidate => candidate.id === item.serviceId); const historical = item.id ? existingItems[item.id] : undefined; return <div className="selected-service" key={item.id ?? item.serviceId}><div><strong>{service?.name ?? historical?.serviceNameSnapshot ?? 'Serviço histórico'}</strong><small>{service?.code ?? historical?.serviceCodeSnapshot ?? ''}</small><small className="service-line-label">{service?.serviceLineName ?? historical?.serviceLineName ?? 'Linha de serviço histórica'}</small></div><button className="secondary" type="button" onClick={() => setForm(current => ({ ...current, items: current.items.filter(candidate => candidate !== item) }))}>Remover</button></div> })}</div>}</section>
       <section className="quote-form-grid commercial-fields" aria-label="Condições comerciais"><Field label="Valor total (R$)" error={errors.totalAmount}><input value={form.totalAmount} onChange={event => setForm(current => ({ ...current, totalAmount: event.target.value }))} /></Field><Field label="Condição de pagamento" error={errors.paymentType}><select value={form.paymentType} onChange={event => setForm(current => ({ ...current, paymentType: event.target.value as PaymentType | '' }))}><option value="">Não definida</option><option value="Cash">À vista</option><option value="Installments">Parcelado</option></select></Field>{form.paymentType === 'Installments' && <Field label="Quantidade de parcelas" error={errors.installmentCount}><input value={form.installmentCount} onChange={event => setForm(current => ({ ...current, installmentCount: event.target.value }))} /></Field>}</section>
       <Field className="quote-notes" label="Observações" error={errors.notes}><textarea value={form.notes} onChange={event => setForm(current => ({ ...current, notes: event.target.value }))} /></Field>
-      <div className="actions quote-form-actions"><button type="button" className="secondary" onClick={() => go('/orcamentos')}>Cancelar</button><button disabled={pending}>{pending ? 'Salvando...' : 'Salvar rascunho'}</button></div>
+      <div className="actions quote-form-actions"><button type="button" className="secondary" onClick={() => go('/orcamentos')}>Cancelar</button><button disabled={pending || stale || loadingQuote || (Boolean(id) && !version)}>{pending ? 'Salvando...' : 'Salvar rascunho'}</button></div>
     </form>
     {quick && <Quick close={() => setQuick(false)} saved={customer => { void choose(customer); setQuick(false); setNotice(customer.isComplete ? 'Cliente já cadastrado. O cliente existente foi selecionado.' : 'Cliente selecionado com cadastro incompleto.') }} />}
   </section>
