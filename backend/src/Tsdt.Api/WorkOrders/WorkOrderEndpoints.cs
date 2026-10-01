@@ -17,6 +17,7 @@ public static class WorkOrderEndpoints
         var orders = app.MapGroup("/api/work-orders").RequireAuthorization(AuthorizationPolicies.WorkOrderExecution);
         orders.MapGet("", ListAsync);
         orders.MapGet("/eligible-assignees", EligibleAssigneesAsync).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
+        WorkOrderSourceEndpoints.Map(orders);
         orders.MapGet("/{id:guid}", GetAsync);
         orders.MapGet("/{id:guid}/history", HistoryAsync);
         orders.MapPost("/from-contract", CreateAsync).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
