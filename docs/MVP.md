@@ -14,7 +14,7 @@ The product CORE is generic. SST/TST is the first vertical and CDS is the first 
 4. Service Lines and Service Catalog
 5. Quotes, commercial approval, assignment, and visits
 6. Contracts
-7. Work Orders
+7. Work Orders and Agenda (day, week, month)
 8. Documents
 9. Deliveries
 10. Dashboard
@@ -34,11 +34,13 @@ Commercial values may exist, but the initial operational MVP does not implement 
 
 ## Execution flow
 
-Work Orders own execution-specific state: assignment, dates, operational progress, and notes. Management creates a Work Order explicitly from an Active Contract. Historical Quote-origin Work Orders remain readable, but new Work Orders cannot bypass Contract formalization. Operational completion and management closure are separate transitions; Delivery remains independent.
+Work Orders own execution-specific state: assignment, dates, operational progress, and notes. Management creates a Work Order explicitly from an Active Contract. Historical Quote-origin Work Orders remain readable, but new Work Orders cannot bypass Contract formalization. Operational completion is terminal in this MVP; there is no separate management closure action. Delivery remains independent.
 
 Do not collapse Work Orders into Quote or Contract merely to accelerate implementation. Commercial formalization and operational execution are separate boundaries.
 
-The intended permission direction is phase-aware: management owns commercial/formalization phases, operational users receive only the execution scope required for assigned work, and management regains closure/receipt controls.
+Agenda is the read/navigation surface between Work Order planning and execution. It uses Work Order schedules and historical snapshots, with no separate appointment aggregate. Scheduled, InProgress, Completed, and historically scheduled Cancelled orders appear; Draft does not. Start date and assignee are required to schedule; time and end date are optional. Management can filter the Organization's schedule by eligible professional; USER sees only assigned work. Scheduling changes remain in the Work Order planning flow.
+
+The intended permission direction is phase-aware: management owns commercial/formalization phases, operational users receive only the execution scope required for assigned work, and future delivery receipt controls remain separate from execution.
 
 ## Documents and delivery
 

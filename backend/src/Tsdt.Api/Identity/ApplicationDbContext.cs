@@ -213,7 +213,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(item => item.Version).IsConcurrencyToken();
             entity.HasIndex(item => new { item.OrganizationId, item.Number }).IsUnique();
             entity.HasIndex(item => new { item.OrganizationId, item.QuoteId });
-            entity.HasIndex(item => new { item.OrganizationId, item.ContractId }).IsUnique().HasFilter("\"ContractId\" IS NOT NULL AND \"Status\" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')");
+            entity.HasIndex(item => new { item.OrganizationId, item.ContractId }).IsUnique().HasFilter("\"ContractId\" IS NOT NULL AND \"Status\" IN ('Draft', 'Scheduled', 'InProgress')");
             entity.HasIndex(item => new { item.OrganizationId, item.Status, item.UpdatedAtUtc });
             entity.HasIndex(item => new { item.OrganizationId, item.AssignedUserId, item.UpdatedAtUtc });
             entity.HasIndex(item => new { item.OrganizationId, item.UpdatedAtUtc, item.Id });
@@ -235,7 +235,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasOne<ContractItem>().WithMany().HasForeignKey(item => item.ContractItemId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Service>().WithMany().HasForeignKey(item => item.ServiceId).OnDelete(DeleteBehavior.Restrict);
         });
-        builder.Entity<WorkOrderAuditRecord>(entity => { entity.ToTable("WorkOrderAuditRecords"); entity.HasKey(item => item.Id); entity.Property(item => item.ActorUserId).IsRequired(); entity.Property(item => item.Action).IsRequired().HasMaxLength(80); entity.Property(item => item.ChangedFields).HasMaxLength(500); entity.HasIndex(item => new { item.WorkOrderId, item.OccurredAtUtc }); entity.HasOne(item => item.WorkOrder).WithMany().HasForeignKey(item => item.WorkOrderId).OnDelete(DeleteBehavior.Restrict); });
+        builder.Entity<WorkOrderAuditRecord>(entity => { entity.ToTable("WorkOrderAuditRecords"); entity.HasKey(item => item.Id); entity.Property(item => item.ActorUserId).IsRequired(); entity.Property(item => item.Action).IsRequired().HasMaxLength(80); entity.Property(item => item.ChangedFields).HasMaxLength(500); entity.Property(item => item.ActorNameSnapshot).HasMaxLength(120); entity.Property(item => item.CancellationReason).HasMaxLength(500); entity.HasIndex(item => new { item.WorkOrderId, item.OccurredAtUtc }); entity.HasOne(item => item.WorkOrder).WithMany().HasForeignKey(item => item.WorkOrderId).OnDelete(DeleteBehavior.Restrict); });
         builder.Entity<WorkOrderNumberCounter>(entity => { entity.ToTable("WorkOrderNumberCounters", table => table.HasCheckConstraint("CK_WorkOrderNumberCounters_Range", "\"LastNumber\" >= 1 AND \"LastNumber\" <= 999999")); entity.HasKey(item => new { item.OrganizationId, item.Year }); entity.HasOne<Organization>().WithMany().HasForeignKey(item => item.OrganizationId).OnDelete(DeleteBehavior.Restrict); });
     }
 

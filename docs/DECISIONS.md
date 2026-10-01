@@ -123,5 +123,17 @@ Lightweight ADR log. Earlier entries remain useful history; later entries explic
 
 ## ADR-024 — Explicit Work Order execution boundary
 
+**Status:** The lifecycle and management-closure provisions are superseded by [ADR-025](#adr-025--terminal-work-order-completion-in-the-mvp). The Contract execution boundary, historical snapshots, tenant isolation, and assignment permissions remain applicable.
+
 **Decision:** Management creates new Work Orders only from Active Contracts. An Active Contract may originate successive Work Orders after the previous execution closes or is cancelled; a new unfinished Work Order for the same Contract scope is blocked. Historical Quote-origin Work Orders remain readable but are not valid creation paths. Work Orders copy historical operational item and service-address snapshots, exclude commercial values from operational responses, and use tenant-scoped numbers. ADMIN and MANAGER control planning and closure; assigned USER may only read and execute their own work. Execution completion enters AwaitingClosure; management closes it separately. Delivery remains independent.
 **Why:** Commercial approval, formalization, operational execution, and management acceptance have distinct ownership and privacy needs. Requiring the Contract preserves the commercial context before execution while successive Work Orders support recurring and repeated delivery.
+
+## ADR-025 — Terminal Work Order completion in the MVP
+
+**Supersedes:** ADR-024's lifecycle and separate management-closure provisions.
+
+**Decision:** The canonical lifecycle is Draft → Scheduled → InProgress → Completed. Completed is terminal; cancellation is permitted from Draft, Scheduled, or InProgress. There is no AwaitingClosure stage or separate close operation. ADMIN and MANAGER manage planning and cancellation and may execute tenant Work Orders; an assigned USER may start and complete only their own work. An Active Contract may originate a successive Work Order after the previous one completes or is cancelled, while simultaneous unfinished Work Orders for the same Contract scope remain blocked. Delivery remains independent.
+
+**Compatibility:** The SimplifyWorkOrderPlanning migration maps existing AwaitingClosure and Closed records to Completed, preserving actual execution timestamps, historical ClosedAtUtc values, and audit actions. The old lifecycle cannot safely represent the new planning model or successive completed orders; rollback requires a database backup.
+
+**Why:** The MVP has no distinct business operation between execution completion and closure. A separate management action adds workflow overhead without a defined acceptance outcome. Any future delivery or acceptance flow requires its own explicit product decision.

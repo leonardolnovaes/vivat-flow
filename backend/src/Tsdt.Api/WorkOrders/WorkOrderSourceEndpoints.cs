@@ -32,6 +32,10 @@ public static class WorkOrderSourceEndpoints
         var query = from contract in db.Contracts.AsNoTracking()
                     join quote in db.Quotes.AsNoTracking() on contract.QuoteId equals quote.Id
                     where contract.OrganizationId == organizationId && quote.OrganizationId == organizationId && contract.Status == ContractStatus.Active
+                        && contract.Items.Any() && quote.ServiceAddressSnapshot != null && quote.ServiceAddressSnapshot.Trim() != ""
+                        && !db.WorkOrders.Any(order => order.OrganizationId == organizationId &&
+                            (order.ContractId == contract.Id || (order.ContractId == null && order.QuoteId == quote.Id)) &&
+                            order.Status != WorkOrderStatus.Completed && order.Status != WorkOrderStatus.Cancelled)
                     select new { contract, quote };
         if (!string.IsNullOrWhiteSpace(term))
             query = query.Where(item => item.contract.CustomerLegalNameSnapshot.ToLower().Contains(term) || item.quote.Number.ToLower().Contains(term));
@@ -77,7 +81,7 @@ public static class WorkOrderSourceEndpoints
         {
             var contractOrders = orders.Where(item => item.ContractId == row.Id || (item.ContractId is null && item.QuoteId == row.QuoteId)).ToList();
             var current = contractOrders
-                .Where(item => item.Status is not (WorkOrderStatus.Closed or WorkOrderStatus.Cancelled))
+                .Where(item => item.Status is not (WorkOrderStatus.Completed or WorkOrderStatus.Cancelled))
                 .OrderBy(item => item.Id)
                 .FirstOrDefault();
             var canCreate = row.Status == nameof(ContractStatus.Active)

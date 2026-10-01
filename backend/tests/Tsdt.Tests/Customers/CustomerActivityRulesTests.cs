@@ -45,8 +45,7 @@ public sealed class CustomerActivityRulesTests
     [InlineData(WorkOrderStatus.Draft, true)]
     [InlineData(WorkOrderStatus.Scheduled, true)]
     [InlineData(WorkOrderStatus.InProgress, true)]
-    [InlineData(WorkOrderStatus.AwaitingClosure, true)]
-    [InlineData(WorkOrderStatus.Closed, false)]
+    [InlineData(WorkOrderStatus.Completed, false)]
     [InlineData(WorkOrderStatus.Cancelled, false)]
     public void Work_order_execution_keeps_customer_active_until_closed_or_cancelled(WorkOrderStatus status, bool expected)
         => Assert.Equal(expected, CustomerActivityService.IsActiveRelationship(status));
