@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api'
 import { LoadingState } from '../../components/LoadingState'
 import { listWorkOrderSources } from './workOrderApi'
@@ -10,12 +10,18 @@ export function WorkOrderSourcePicker({ go, onSessionExpired }: Props) {
   const type: WorkOrderSource = 'Contract'
   const [input, setInput] = useState(''), [search, setSearch] = useState(''), [page, setPage] = useState(1)
   const [data, setData] = useState<WorkOrderSourceList | null>(null), [error, setError] = useState('')
+  const requestId = useRef(0)
   const load = useCallback(async () => {
+    const currentRequest = ++requestId.current
     setData(null); setError('')
     const query = new URLSearchParams({ sourceType: type, page: String(page), pageSize: '20' })
     if (search) query.set('search', search)
-    try { setData(await listWorkOrderSources(query)) }
+    try {
+      const result = await listWorkOrderSources(query)
+      if (currentRequest === requestId.current) setData(result)
+    }
     catch (caught) {
+      if (currentRequest !== requestId.current) return
       if (caught instanceof ApiError && caught.status === 401) onSessionExpired()
       else setError(caught instanceof ApiError && caught.status === 403 ? 'Você não tem permissão para escolher origens de OS.' : 'Não foi possível carregar as origens. Tente novamente.')
     }
@@ -34,5 +40,5 @@ export function WorkOrderSourcePicker({ go, onSessionExpired }: Props) {
 }
 
 function SourceCard({ source, go }: { source: WorkOrderSourceSummary; go: Props['go'] }) {
-  return <article className="card wo-source-card"><div><small>{source.sourceType === 'Quote' ? 'Orçamento aprovado' : 'Contrato ativo'} · {source.reference}</small><h3>{source.customerLegalNameSnapshot}</h3><p>{source.serviceAddressSnapshot || 'Local do serviço não informado'}</p></div><div className="wo-source-action">{source.currentWorkOrderId ? <><p>OS atual: {source.currentWorkOrderNumber}</p><button className="secondary" onClick={() => go(`/ordens-servico/${source.currentWorkOrderId}`)}>Ver OS</button></> : source.governingContractId ? <><p>{source.governingContractStatus === 'Active' ? 'Este escopo é executado pelo contrato ativo.' : 'Contrato em formalização. Aguarde a ativação para criar a OS.'}</p>{source.governingContractStatus === 'Active' && <button className="secondary" onClick={() => go(`/ordens-servico/novo?contractId=${source.governingContractId}`)}>Usar contrato</button>}</> : source.canCreate ? <button onClick={() => go(`/ordens-servico/novo?${source.sourceType === 'Quote' ? `quoteId=${source.id}` : `contractId=${source.id}`}`)}>Selecionar origem</button> : <p>Origem ainda não está pronta para uma OS. Verifique local e serviços.</p>}</div></article>
+  return <article className="card wo-source-card"><div><small>Contrato ativo · {source.reference}</small><h3>{source.customerLegalNameSnapshot}</h3><p>{source.serviceAddressSnapshot || 'Local do serviço não informado'}</p></div><div className="wo-source-action">{source.currentWorkOrderId ? <><p>OS atual: {source.currentWorkOrderNumber}</p><button className="secondary" onClick={() => go(`/ordens-servico/${source.currentWorkOrderId}`)}>Ver OS</button></> : source.canCreate ? <button onClick={() => go(`/ordens-servico/novo?contractId=${source.id}`)}>Selecionar contrato</button> : <p>O contrato ainda não está pronto para uma nova OS. Verifique local, serviços e execuções em aberto.</p>}</div></article>
 }
