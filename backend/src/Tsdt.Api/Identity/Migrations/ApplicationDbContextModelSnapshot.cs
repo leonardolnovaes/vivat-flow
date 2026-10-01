@@ -900,6 +900,19 @@ namespace Tsdt.Api.Identity.Migrations
                     b.Property<Guid>("CustomerContactId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("EmailSnapshot")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<string>("NameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("PhoneSnapshot")
+                        .HasMaxLength(11)
+                        .HasColumnType("character varying(11)");
+
                     b.HasKey("QuoteId", "CustomerContactId");
 
                     b.HasIndex("CustomerContactId");
@@ -1271,14 +1284,13 @@ namespace Tsdt.Api.Identity.Migrations
                     b.HasIndex("QuoteId");
 
                     b.HasIndex("OrganizationId", "ContractId")
-                        .HasFilter("\"ContractId\" IS NOT NULL");
+                        .IsUnique()
+                        .HasFilter("\"ContractId\" IS NOT NULL AND \"Status\" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')");
 
                     b.HasIndex("OrganizationId", "Number")
                         .IsUnique();
 
-                    b.HasIndex("OrganizationId", "QuoteId")
-                        .IsUnique()
-                        .HasFilter("\"Status\" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')");
+                    b.HasIndex("OrganizationId", "QuoteId");
 
                     b.HasIndex("OrganizationId", "AssignedUserId", "UpdatedAtUtc");
 

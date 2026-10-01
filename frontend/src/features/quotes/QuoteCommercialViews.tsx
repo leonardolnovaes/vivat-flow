@@ -63,21 +63,29 @@ function formatHistoryNotes(event: QuoteHistory) {
   if (event.action === 'QUOTE_UPDATED') return formatQuoteChangedFields(event.notes)
   if (event.action === 'VISIT_SCHEDULED') {
     const period = parseVisitPeriod(event.notes)
-    return period ? `Agendada para ${dateOnly(period.start)}, das ${time(period.start)} às ${time(period.end)}` : event.notes
+    return period ? `Agendada para ${formatVisitPeriod(period)}` : event.notes
   }
   if (event.action === 'VISIT_RESCHEDULED') {
     const [previous, current] = event.notes.split(' -> ')
     const previousPeriod = parseVisitPeriod(previous)
     const currentPeriod = parseVisitPeriod(current)
-    return previousPeriod && currentPeriod ? `Reagendada de ${dateOnly(previousPeriod.start)}, das ${time(previousPeriod.start)} às ${time(previousPeriod.end)} para ${dateOnly(currentPeriod.start)}, das ${time(currentPeriod.start)} às ${time(currentPeriod.end)}` : event.notes
+    return previousPeriod && currentPeriod ? `Reagendada de ${formatVisitPeriod(previousPeriod)} para ${formatVisitPeriod(currentPeriod)}` : event.notes
   }
   return event.notes
 }
 
 function parseVisitPeriod(value: string) {
-  const match = /^(.+)\|(.+)$/.exec(value)
-  if (!match || Number.isNaN(new Date(match[1]).getTime()) || Number.isNaN(new Date(match[2]).getTime())) return null
-  return { start: match[1], end: match[2] }
+  const match = /^(.+)\|(.*)$/.exec(value)
+  if (!match || Number.isNaN(new Date(match[1]).getTime())) return null
+  const end = match[2] || null
+  if (end && Number.isNaN(new Date(end).getTime())) return null
+  return { start: match[1], end }
+}
+
+function formatVisitPeriod(period: { start: string; end: string | null }) {
+  return period.end
+    ? `${dateOnly(period.start)}, das ${time(period.start)} às ${time(period.end)}`
+    : `${dateOnly(period.start)}, às ${time(period.start)} · sem horário final`
 }
 
 function date(value:string|null) { return value ? new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short'}).format(new Date(value)) : '—' }; function dateOnly(value:string) { return new Intl.DateTimeFormat('pt-BR',{dateStyle:'short'}).format(new Date(value)) }; function time(value:string|null) { return value ? new Intl.DateTimeFormat('pt-BR',{timeStyle:'short'}).format(new Date(value)) : '?' }; function datetimeLocal(value?:string, plusHour = false) { const local = value ? new Date(value) : new Date(); if (!value) { local.setMinutes(0, 0, 0); local.setHours(local.getHours() + (plusHour ? 2 : 1)) } local.setMinutes(local.getMinutes() - local.getTimezoneOffset()); return local.toISOString().slice(0, 16) }; function money(value:number) { return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value) }; function formatCnpj(value:string) { return value.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5') }; function responseLabel(value:ClientResponseType) { return value==='Approved'?'Aprovado':value==='ChangesRequested'?'Alterações solicitadas':'Rejeitado' }; function workflowMessage(status:string) { return status==='AwaitingApproval'?'Aguardando a decisão do cliente.':status==='ChangesRequested'?'O cliente solicitou ajustes antes de decidir.':status==='Approved'?'O cliente aprovou este orçamento.':status==='Draft'?'Revise e envie o orçamento para aprovação.':'Consulte o histórico para acompanhar a situação.' }; function eventLabel(action:string) { return ({QUOTE_CREATED:'Orçamento criado',QUOTE_UPDATED:'Orçamento atualizado',QUOTE_SENT_FOR_APPROVAL:'Orçamento enviado para aprovação',QUOTE_SUBMITTED:'Orçamento enviado para aprovação',QUOTE_APPROVED:'Cliente aprovou o orçamento',QUOTE_REJECTED:'Cliente rejeitou o orçamento',QUOTE_CHANGES_REQUESTED:'Cliente solicitou alterações',QUOTE_REOPENED:'Orçamento reaberto',QUOTE_CANCELLED:'Orçamento cancelado',QUOTE_EXPIRED:'Orçamento expirado',VISIT_SCHEDULED:'Visita agendada',VISIT_RESCHEDULED:'Visita reagendada',VISIT_COMPLETED:'Visita concluída',VISIT_CANCELLED:'Visita cancelada'} as Record<string,string>)[action] ?? 'Evento comercial registrado' }; function message(error:unknown,expired:()=>void,fallback:string) { if(error instanceof ApiError){if(error.status===401){expired();return'Sua sessão expirou.'}if(error.status===403)return'Você não tem permissão para esta ação.';if(error.status===409)return'Este orçamento ou visita foi alterado. Atualize a página e tente novamente.';if(error.status>=500)return'O serviço está indisponível no momento.';return error.message||fallback}return fallback }

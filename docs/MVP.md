@@ -26,7 +26,7 @@ A Customer may receive a Quote containing multiple Services, including Services 
 
 The commercial journey is conceptually:
 
-`Customer → Quote → Approval → Contract formalization and activation → Work Order execution` is the preferred user journey. The API also retains the established direct approved Quote to Work Order path where no governing Contract exists.
+`Customer → Quote → Approval → Contract formalization and activation → Work Order execution` is the required journey. A new Work Order must originate from an Active Contract; an approved Quote cannot originate a new Work Order directly.
 
 A Contract is never auto-created by approval. Contract scope comes from the approved Quote and remains historically stable.
 
@@ -34,7 +34,7 @@ Commercial values may exist, but the initial operational MVP does not implement 
 
 ## Execution flow
 
-Work Orders own execution-specific state: assignment, dates, operational progress, and notes. Management creates a Work Order explicitly from an Active Contract in the primary UI. The existing direct approved Quote API path remains available where no governing Contract exists. Operational completion and management closure are separate transitions; Delivery remains independent.
+Work Orders own execution-specific state: assignment, dates, operational progress, and notes. Management creates a Work Order explicitly from an Active Contract. Historical Quote-origin Work Orders remain readable, but new Work Orders cannot bypass Contract formalization. Operational completion and management closure are separate transitions; Delivery remains independent.
 
 Do not collapse Work Orders into Quote or Contract merely to accelerate implementation. Commercial formalization and operational execution are separate boundaries.
 

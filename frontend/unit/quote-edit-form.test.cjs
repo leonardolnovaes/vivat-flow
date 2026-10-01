@@ -34,8 +34,8 @@ class ApiError extends Error {
 }
 
 const item = (id, serviceId) => ({ id, serviceId, serviceNameSnapshot: serviceId })
-const quote = (version, items) => ({
-  id: 'quote-id', customerId: 'customer-id', version, items,
+const quote = (version, items, status = 'Draft') => ({
+  id: 'quote-id', customerId: 'customer-id', version, items, status,
   totalAmount: 100, paymentType: 'Cash', installmentCount: null,
   employeeCount: 10, riskDegree: 'One', serviceUnitId: null,
   responsibleUserId: null, notes: null,
@@ -44,14 +44,16 @@ let serverQuote = quote('version-1', [item('item-1', 'service-1')])
 let releasePut
 let getCount = 0
 const puts = []
+const quoteLoads = []
 const originalLoad = Module._load
 Module._load = function (name, parent, isMain) {
   if (name === '../../api' && parent?.filename.replaceAll('\\', '/').includes('/features/quotes/')) {
     return { ApiError, request: async (path, init) => {
       if (path === '/api/quotes/professionals') return { ok: true, json: async () => [] }
-      if (path === '/api/quotes/quote-id' && !init?.method) {
+      if (path.startsWith('/api/quotes/') && !init?.method) {
         getCount++
-        return { ok: true, json: async () => serverQuote }
+        const loaded = quoteLoads.shift() ?? Promise.resolve(serverQuote)
+        return { ok: true, json: async () => await loaded }
       }
       if (path === '/api/quotes/quote-id' && init.method === 'PUT') {
         const body = JSON.parse(init.body)
@@ -71,6 +73,7 @@ Module._load = function (name, parent, isMain) {
     return { normalizeBrlAmount: value => value.trim() || null }
   }
   if (name === './QuoteCommercialViews') return { QuoteDetailView: () => null, QuoteWorkspace: () => null }
+  if (name === './QuickCustomerDialog') return { QuickCustomerDialog: () => null }
   if (name === '../../components/LoadingState') return { LoadingState: () => null }
   if (name === '../customers/customerApi') return {
     getCustomer: async () => ({ id: 'customer-id', legalName: 'Cliente', cnpj: '04252011000110', units: [] }),
@@ -107,11 +110,11 @@ function submit(container) {
   container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
 }
 
-test('the Quote edit component saves twice with current versions, blocks in-flight edits, and reloads after 409', async () => {
+test('the Quote edit component blocks an in-flight save and redirects to detail after success', async () => {
   serverQuote = quote('version-1', [item('item-1', 'service-1')])
   puts.length = 0
   getCount = 0
-  const { container, root, navigation, props } = await render()
+  const { container, root, navigation } = await render()
   assert.equal(container.querySelector('.quote-form-actions button:last-child')?.disabled, false)
   assert.equal(getCount, 1)
 
@@ -125,30 +128,64 @@ test('the Quote edit component saves twice with current versions, blocks in-flig
   assert.equal(container.querySelector('form').hasAttribute('inert'), true)
   assert.equal(container.querySelector('.quote-form-actions button:last-child')?.disabled, true)
   await act(async () => { releasePut(); releasePut = null; await flush() })
+
   assert.equal(puts[0].expectedVersion, 'version-1')
-  assert.equal(navigation.length, 0)
-  assert.equal(container.querySelectorAll('.selected-service').length, 2)
+  assert.deepEqual(navigation, ['/orcamentos/quote-id'])
+  await act(async () => root.unmount())
+})
 
-  await act(async () => {
-    root.render(React.createElement(QuoteEditForm, { ...props, onSessionExpired: () => {} }))
-    await flush()
-  })
-  assert.equal(getCount, 1)
-
-  await act(async () => container.querySelector('.selected-service button').click())
-  await act(async () => { submit(container); await flush() })
-  assert.equal(puts[1].expectedVersion, 'version-2')
-  assert.deepEqual(puts[1].items, [{ id: 'item-2', serviceId: 'service-2' }])
-  assert.equal(navigation.length, 0)
+test('a genuine stale conflict keeps the edit blocked until latest Draft data is reloaded', async () => {
+  serverQuote = quote('version-1', [item('item-1', 'service-1')])
+  puts.length = 0
+  getCount = 0
+  const { container, root, navigation } = await render()
 
   serverQuote = quote('version-remote', serverQuote.items)
   await act(async () => { submit(container); await flush() })
-  assert.equal(puts[2].expectedVersion, 'version-3')
+
+  assert.equal(puts[0].expectedVersion, 'version-1')
+  assert.equal(navigation.length, 0)
   assert.match(container.querySelector('.error-panel').textContent, /Carregue os dados mais recentes/)
   assert.equal(container.querySelector('form').hasAttribute('inert'), true)
 
   await act(async () => { container.querySelector('.error-panel button').click(); await flush() })
-  assert.equal(container.querySelector('form').hasAttribute('inert'), false)
   assert.equal(container.querySelector('.error-panel'), null)
+  assert.equal(container.querySelector('form').hasAttribute('inert'), false)
+  assert.equal(getCount, 2)
   await act(async () => root.unmount())
+})
+
+test('a Quote that is no longer Draft leaves the edit route instead of entering a 409 reload loop', async () => {
+  serverQuote = quote('version-remote', [item('item-1', 'service-1')], 'AwaitingApproval')
+  puts.length = 0
+  getCount = 0
+  const { root, navigation } = await render()
+
+  assert.deepEqual(navigation, ['/orcamentos/quote-id'])
+  assert.equal(puts.length, 0)
+  await act(async () => root.unmount())
+})
+
+test('an obsolete non-Draft response cannot redirect after navigation to another quote edit route', async () => {
+  let resolveOlder
+  quoteLoads.push(new Promise(resolve => { resolveOlder = resolve }), Promise.resolve({ ...quote('version-new', [item('item-new', 'service-1')]), id: 'quote-new' }))
+  const { root, navigation, props } = await render()
+
+  await act(async () => {
+    root.render(React.createElement(QuoteEditForm, { ...props, id: 'quote-new', path: '/orcamentos/quote-new/editar' }))
+    await flush()
+  })
+  await act(async () => { resolveOlder(quote('version-old', [item('item-old', 'service-1')], 'AwaitingApproval')); await flush() })
+
+  assert.deepEqual(navigation, [])
+  await act(async () => root.unmount())
+})
+
+test('a pending non-Draft load cannot redirect after leaving the edit screen', async () => {
+  let resolveLoad
+  quoteLoads.push(new Promise(resolve => { resolveLoad = resolve }))
+  const { root, navigation } = await render()
+  await act(async () => root.unmount())
+  await act(async () => { resolveLoad(quote('version-old', [item('item-old', 'service-1')], 'AwaitingApproval')); await flush() })
+  assert.deepEqual(navigation, [])
 })

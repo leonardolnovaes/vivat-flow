@@ -13,7 +13,7 @@ export const getWorkOrderHistory = (id: string) => call<WorkOrderHistory[]>(`/ap
 export const getEligibleAssignees = () => call<EligibleAssignee[]>('/api/work-orders/eligible-assignees')
 export const listWorkOrderSources = (query: URLSearchParams) => call<WorkOrderSourceList>(`/api/work-orders/sources?${query}`)
 export const getWorkOrderSource = (type: WorkOrderSource, id: string) => call<WorkOrderSourceDetail>(`/api/work-orders/sources/${type.toLowerCase()}/${id}`)
-export const createWorkOrder = (source: 'quote' | 'contract', sourceId: string, planning: Planning) => call<WorkOrder>(`/api/work-orders/from-${source}`, { method: 'POST', body: JSON.stringify({ sourceId, ...planningPayload(planning) }) })
+export const createWorkOrder = (contractId: string, planning: Planning) => call<WorkOrder>('/api/work-orders/from-contract', { method: 'POST', body: JSON.stringify({ sourceId: contractId, ...planningPayload(planning) }) })
 export const saveWorkOrderPlanning = (id: string, version: string, planning: Planning) => call<WorkOrder>(`/api/work-orders/${id}/planning`, { method: 'PUT', body: JSON.stringify({ expectedVersion: version, ...planningPayload(planning) }) })
 export const transitionWorkOrder = (id: string, action: 'schedule' | 'start' | 'complete' | 'close' | 'cancel', version: string, completionNotes?: string) => call<WorkOrder>(`/api/work-orders/${id}/${action}`, { method: 'POST', body: JSON.stringify({ expectedVersion: version, ...(action === 'complete' ? { completionNotes: completionNotes?.trim() || null } : {}) }) })
 

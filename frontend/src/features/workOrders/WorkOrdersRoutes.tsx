@@ -8,7 +8,7 @@ import type { EligibleAssignee, Planning, WorkOrder, WorkOrderHistory, WorkOrder
 
 type Props = { path: string; go: (path: string, replace?: boolean) => void; onSessionExpired: () => void; user: { id: string; roles: string[] } }
 type Errors = Record<string, string[]>
-type Source = { id: string; kind: 'quote' | 'contract'; status: string; customer: string; address: string | null; items: WorkOrderSourceItem[]; canCreate: boolean }
+type Source = { id: string; kind: 'contract'; status: string; customer: string; address: string | null; items: WorkOrderSourceItem[]; canCreate: boolean }
 const blank: Planning = { assignedUserId: '', scheduledStart: '', scheduledEnd: '', operationalNotes: '' }
 const labels: Record<WorkOrderStatus, string> = { Draft: 'Rascunho', Scheduled: 'Agendada', InProgress: 'Em andamento', AwaitingClosure: 'Aguardando encerramento', Closed: 'Encerrada', Cancelled: 'Cancelada' }
 const events: Record<string, string> = { WORK_ORDER_CREATED_FROM_QUOTE: 'OS criada a partir do orçamento', WORK_ORDER_CREATED_FROM_CONTRACT: 'OS criada a partir do contrato', WORK_ORDER_PLANNING_UPDATED: 'Planejamento atualizado', WORK_ORDER_SCHEDULED: 'OS agendada', WORK_ORDER_STARTED: 'Execução iniciada', WORK_ORDER_EXECUTION_COMPLETED: 'Execução concluída', WORK_ORDER_CLOSED: 'OS encerrada', WORK_ORDER_CANCELLED: 'OS cancelada' }
@@ -42,26 +42,31 @@ export function WorkOrdersRoutes(props: Props) {
   return <Empty title="Página não encontrada" text="O endereço informado não corresponde a uma OS." go={props.go} />
 }
 
-export function RelatedWorkOrderAction({ quoteId, contractId, eligible, go }: { quoteId: string; contractId?: string; eligible: boolean; go: Props['go'] }) {
+export function RelatedWorkOrderAction({ contractId, eligible, go }: { contractId: string; eligible: boolean; go: Props['go'] }) {
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null)
-  const [governingContract, setGoverningContract] = useState<{ id: string; status: string } | null>(null)
   const [canCreate, setCanCreate] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const requestId = useRef(0)
   const load = useCallback(async () => {
+    const currentRequest = ++requestId.current
     setLoading(true); setError(false)
-    try { const result = await getWorkOrderSource(contractId ? 'Contract' : 'Quote', contractId ?? quoteId); setCurrentOrderId(result.source.currentWorkOrderId); setGoverningContract(result.source.governingContractId ? { id: result.source.governingContractId, status: result.source.governingContractStatus ?? '' } : null); setCanCreate(result.source.canCreate) }
-    catch { setError(true) }
-    finally { setLoading(false) }
-  }, [quoteId, contractId])
+    try {
+      const result = await getWorkOrderSource('Contract', contractId)
+      if (currentRequest !== requestId.current) return
+      setCurrentOrderId(result.source.currentWorkOrderId)
+      setCanCreate(result.source.canCreate)
+    }
+    catch { if (currentRequest === requestId.current) setError(true) }
+    finally { if (currentRequest === requestId.current) setLoading(false) }
+  }, [contractId])
   useEffect(() => { void load() }, [load])
   if (loading) return <LoadingState size="sm" />
   if (error) return <div className="actions"><p>Não foi possível verificar a OS vinculada.</p><button className="secondary" onClick={() => void load()}>Tentar novamente</button></div>
   if (currentOrderId) return <button type="button" className="secondary" onClick={() => go(`/ordens-servico/${currentOrderId}`)}>Ver OS</button>
-  if (governingContract) return <p className="wo-hint">Este orçamento possui contrato {governingContract.status === 'Active' ? 'ativo' : 'em formalização'}. {governingContract.status === 'Active' ? 'Crie a OS a partir do contrato.' : 'Aguarde a ativação do contrato para criar a OS.'} {governingContract.status === 'Active' && <button className="link-button" onClick={() => go(`/ordens-servico/novo?contractId=${governingContract.id}`)}>Usar contrato</button>}</p>
   if (!eligible) return null
-  if (!canCreate) return <p className="wo-hint">Informe um local válido e pelo menos um serviço operacional antes de criar a OS.</p>
-  return <button type="button" onClick={() => go(`/ordens-servico/novo?${contractId ? `contractId=${contractId}` : `quoteId=${quoteId}`}`)}>Criar OS</button>
+  if (!canCreate) return <p className="wo-hint">Finalize a OS em aberto ou verifique o local e os serviços antes de criar uma nova OS.</p>
+  return <button type="button" onClick={() => go(`/ordens-servico/novo?contractId=${contractId}`)}>Criar OS</button>
 }
 
 function List({ go, onSessionExpired, user }: Props) {
@@ -85,25 +90,30 @@ function List({ go, onSessionExpired, user }: Props) {
 }
 
 function Create({ quoteId, contractId, go, onSessionExpired }: Props & { quoteId: string | null; contractId: string | null }) {
-  const [source, setSource] = useState<Source | null>(null), [existingId, setExistingId] = useState<string | null>(null), [governingContract, setGoverningContract] = useState<{ id: string; status: string } | null>(null), [people, setPeople] = useState<EligibleAssignee[]>([])
+  const [source, setSource] = useState<Source | null>(null), [existingId, setExistingId] = useState<string | null>(null), [people, setPeople] = useState<EligibleAssignee[]>([])
   const [form, setForm] = useState<Planning>(blank), [errors, setErrors] = useState<Errors>({}), [error, setError] = useState(''), [loading, setLoading] = useState(true), [pending, setPending] = useState(false)
-  const sourceId = quoteId || contractId
+  const loadRequestId = useRef(0)
   const load = useCallback(async () => {
-    if (!sourceId || Boolean(quoteId) === Boolean(contractId)) { setError('Selecione uma origem para criar a OS.'); setLoading(false); return }
-    setLoading(true); setError('')
+    const currentRequest = ++loadRequestId.current
+    if (!contractId || quoteId) { setSource(null); setError('Selecione um contrato ativo para criar a OS.'); setLoading(false); return }
+    setLoading(true); setError(''); setSource(null); setExistingId(null)
     try {
-      const [record, assignees] = await Promise.all([getWorkOrderSource(quoteId ? 'Quote' : 'Contract', sourceId), getEligibleAssignees()])
-      setPeople(assignees); setExistingId(record.source.currentWorkOrderId); setGoverningContract(record.source.governingContractId ? { id: record.source.governingContractId, status: record.source.governingContractStatus ?? '' } : null)
-      setSource({ id: record.source.id, kind: record.source.sourceType === 'Quote' ? 'quote' : 'contract', status: record.source.status, customer: record.source.customerLegalNameSnapshot, address: record.source.serviceAddressSnapshot, items: record.items, canCreate: record.source.canCreate })
-    } catch (caught) { setError(problem(caught, onSessionExpired, 'Não foi possível carregar a origem da OS.')) }
-    finally { setLoading(false) }
-  }, [quoteId, contractId, sourceId, onSessionExpired])
+      const [record, assignees] = await Promise.all([getWorkOrderSource('Contract', contractId), getEligibleAssignees()])
+      if (currentRequest !== loadRequestId.current) return
+      setPeople(assignees)
+      setExistingId(record.source.currentWorkOrderId)
+      setSource({ id: record.source.id, kind: 'contract', status: record.source.status, customer: record.source.customerLegalNameSnapshot, address: record.source.serviceAddressSnapshot, items: record.items, canCreate: record.source.canCreate })
+    } catch (caught) {
+      if (currentRequest === loadRequestId.current) setError(problem(caught, onSessionExpired, 'Não foi possível carregar o contrato da OS.'))
+    }
+    finally { if (currentRequest === loadRequestId.current) setLoading(false) }
+  }, [quoteId, contractId, onSessionExpired])
   useEffect(() => { void load() }, [load])
   const save = async (event: FormEvent) => {
     event.preventDefault(); if (!source || pending || !source.canCreate) return
     const next = validatePlanning(form); setErrors(next); if (Object.keys(next).length) return
     setPending(true); setError('')
-    try { const order = await createWorkOrder(source.kind, source.id, form); go(`/ordens-servico/${order.id}`, true) }
+    try { const order = await createWorkOrder(source.id, form); go(`/ordens-servico/${order.id}`, true) }
     catch (caught) { if (caught instanceof ApiError && Object.keys(caught.errors).length) setErrors(caught.errors); else setError(problem(caught, onSessionExpired, 'Não foi possível criar a OS.')) }
     finally { setPending(false) }
   }
@@ -111,14 +121,14 @@ function Create({ quoteId, contractId, go, onSessionExpired }: Props & { quoteId
   if (!source) return <ErrorState text={error} retry={() => void load()} />
   if (existingId) return <section className="card empty-state"><h2>Já existe uma OS para este escopo</h2><p>Abra a OS atual para acompanhar a execução.</p><button onClick={() => go(`/ordens-servico/${existingId}`)}>Ver OS</button></section>
   const eligible = source.canCreate
-  const reason = governingContract ? governingContract.status === 'Active' ? 'Este orçamento possui contrato ativo. Crie a OS a partir dele.' : 'Este orçamento possui contrato em formalização. Aguarde a ativação.' : source.kind === 'quote' && source.status !== 'Approved' ? 'Somente orçamentos aprovados podem originar uma OS.' : source.kind === 'contract' && source.status !== 'Active' ? 'Somente contratos ativos podem originar uma OS.' : 'Informe um local válido e pelo menos um serviço operacional antes de criar a OS.'
+  const reason = source.status !== 'Active' ? 'Somente contratos ativos podem originar uma OS.' : 'Finalize a OS em aberto ou verifique o local e os serviços antes de criar uma nova OS.'
   return <>
     <div className="page-title"><div><p className="eyebrow">Operação</p><h2>Criar Ordem de Serviço</h2><p>A OS será criada como rascunho. O agendamento é uma etapa separada.</p></div></div>
     {error && <p className="error" role="alert">{error}</p>}
     {errors.sourceId?.map(item => <p className="error" role="alert" key={item}>{item}</p>)}
-    {!eligible && <section className="card error-panel"><p>{reason}</p>{governingContract?.status === 'Active' && <button className="secondary" onClick={() => go(`/ordens-servico/novo?contractId=${governingContract.id}`)}>Usar contrato</button>}</section>}
+    {!eligible && <section className="card error-panel"><p>{reason}</p></section>}
     <section className="wo-create-layout">
-      <article className="card wo-scope"><h3>Escopo operacional</h3><dl className="wo-definition"><Info label="Origem" value={source.kind === 'quote' ? 'Orçamento' : 'Contrato'}/><Info label="Cliente" value={source.customer}/><Info label="Local do serviço" value={source.address || 'Não informado'}/></dl><h3>Serviços</h3><Services items={source.items}/></article>
+      <article className="card wo-scope"><h3>Escopo operacional</h3><dl className="wo-definition"><Info label="Origem" value="Contrato"/><Info label="Cliente" value={source.customer}/><Info label="Local do serviço" value={source.address || 'Não informado'}/></dl><h3>Serviços</h3><Services items={source.items}/></article>
       <section className="card wo-planning"><h3>Planejamento inicial</h3><p>Você pode completar o planejamento depois de criar o rascunho.</p><form onSubmit={save}><PlanningFields form={form} setForm={setForm} errors={errors} people={people} pending={pending}/><div className="actions"><button className="secondary" type="button" onClick={() => go('/ordens-servico/novo')}>Voltar</button><button disabled={pending || !eligible}>{pending ? 'Criando...' : 'Criar OS'}</button></div></form></section>
     </section>
   </>
