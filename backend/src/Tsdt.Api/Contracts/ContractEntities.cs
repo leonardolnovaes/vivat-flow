@@ -3,6 +3,7 @@ using Tsdt.Api.Quotes;
 namespace Tsdt.Api.Contracts;
 
 public enum ContractStatus { Draft, Active, Ended, Cancelled }
+public enum ContractType { Pontual, Recorrente }
 
 public sealed class Contract
 {
@@ -12,6 +13,7 @@ public sealed class Contract
     public Guid CustomerId { get; set; }
     public required string CustomerLegalNameSnapshot { get; set; }
     public ContractStatus Status { get; set; } = ContractStatus.Draft;
+    public ContractType Type { get; set; } = ContractType.Pontual;
     public decimal ApprovedTotalAmount { get; set; }
     public QuotePaymentType PaymentType { get; set; }
     public int? InstallmentCount { get; set; }

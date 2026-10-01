@@ -54,7 +54,7 @@ The current commercial lifecycle supports Draft, Awaiting Approval, Changes Requ
 
 A Contract is an explicit formalization of an approved Quote. Quote approval must not automatically create or activate a Contract.
 
-The user explicitly chooses to create a Contract from an approved Quote. The approved commercial scope is inherited and remains read-only; contract formalization adds supported metadata such as dates, terms, and notes.
+The user explicitly chooses to create a Contract from an approved Quote. The approved commercial scope is inherited and remains read-only; contract formalization adds supported metadata such as dates, terms, and notes. Creation requires an explicit Pontual or Recorrente type. Both types can originate Work Orders once Active. A terminal Contract may be followed by a replacement Contract.
 
 A Contract may contain Services from multiple Service Lines. Do **not** add `Contract.ServiceLineId`.
 
@@ -71,9 +71,9 @@ Activation requires a start date. Invalid backward or repeated transitions are r
 
 ## Work Orders and execution
 
-Work Orders are the explicit execution boundary, separate from Quote and Contract commercial formalization. One Work Order covers the complete source scope. Management creates it from an approved Quote without a governing Draft or Active Contract, or from an Active Contract. Approval, formalization, and activation never create one automatically. A cancelled Work Order may be replaced; a non-cancelled Work Order prevents another for the same originating Quote scope.
+Work Orders are the explicit execution boundary, separate from Quote and Contract commercial formalization. One Work Order covers the complete source scope. Management creates new Work Orders only from Active Contracts. Historical Quote-origin Work Orders remain readable. Approval, formalization, and activation never create one automatically. A cancelled Work Order may be replaced; a non-cancelled Work Order prevents another for the same originating Quote scope.
 
-Work Orders snapshot the originating Quote's service address and operational item scope from Quote items or Contract items. Operational responses exclude prices and payment terms. The lifecycle is Draft, Scheduled, InProgress, AwaitingClosure, Closed, or Cancelled. Execution completion means the assigned professional finished work; management closure is a separate acceptance action. Delivery remains independent.
+New Work Orders snapshot the originating Quote's service address and operational item scope from Contract items. Historical Quote-origin records retain their original item snapshots. Operational responses exclude prices and payment terms. The lifecycle is Draft, Scheduled, InProgress, AwaitingClosure, Closed, or Cancelled. Execution completion means the assigned professional finished work; management closure is a separate acceptance action. Delivery remains independent.
 
 ADMIN and MANAGER manage tenant Work Orders and may perform execution actions. USER can see only assigned Work Orders and may start or complete their own work. Platform Administrators have no Work Order access. Recurrence, partial execution, and multiple assignees are outside this MVP.
 
