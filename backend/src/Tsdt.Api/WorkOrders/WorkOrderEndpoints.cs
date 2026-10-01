@@ -6,7 +6,6 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Tsdt.Api.Contracts;
 using Tsdt.Api.Customers;
 using Tsdt.Api.Identity;
-using Tsdt.Api.Quotes;
 
 namespace Tsdt.Api.WorkOrders;
 
@@ -22,8 +21,7 @@ public static class WorkOrderEndpoints
         WorkOrderSourceEndpoints.Map(orders);
         orders.MapGet("/{id:guid}", GetAsync);
         orders.MapGet("/{id:guid}/history", HistoryAsync);
-        orders.MapPost("/from-quote", (CreateWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => CreateAsync(request, WorkOrderSourceType.Quote, context, antiforgery, db)).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
-        orders.MapPost("/from-contract", (CreateWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => CreateAsync(request, WorkOrderSourceType.Contract, context, antiforgery, db)).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
+        orders.MapPost("/from-contract", CreateAsync).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
         orders.MapPut("/{id:guid}/planning", PlanningAsync).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
         orders.MapPost("/{id:guid}/schedule", (Guid id, WorkOrderVersionRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.Scheduled, null, context, antiforgery, db)).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
         orders.MapPost("/{id:guid}/start", (Guid id, WorkOrderVersionRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.InProgress, null, context, antiforgery, db));
@@ -96,58 +94,61 @@ public static class WorkOrderEndpoints
                       select user).SingleOrDefaultAsync();
     }
 
-    private static async Task<IResult> CreateAsync(CreateWorkOrderRequest request, WorkOrderSourceType source, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db)
+    private static async Task<IResult> CreateAsync(CreateWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db)
     {
         if (!await Csrf(context, antiforgery)) return CsrfFailure();
         var errors = ValidatePlanning(request.ScheduledStart, request.ScheduledEnd, request.OperationalNotes);
         if (errors is not null) return Results.ValidationProblem(errors);
-        var organizationId = TenantContext.OrganizationId(context);
-        Quote? quote;
-        Contract? contract = null;
-        if (source == WorkOrderSourceType.Quote)
-        {
-            quote = await db.Quotes.AsNoTracking().Include(item => item.Items).SingleOrDefaultAsync(item => item.Id == request.SourceId && item.OrganizationId == organizationId);
-            if (quote is null) return Results.NotFound();
-            if (quote.Status != QuoteStatus.Approved) return StateConflict("Somente orçamentos aprovados podem originar uma OS.");
-            if (await db.Contracts.AnyAsync(item => item.OrganizationId == organizationId && item.QuoteId == quote.Id && (item.Status == ContractStatus.Draft || item.Status == ContractStatus.Active)))
-                return StateConflict("Este orçamento possui contrato em formalização ou ativo. Use o contrato ativo quando aplicável.");
-        }
-        else
-        {
-            contract = await db.Contracts.AsNoTracking().Include(item => item.Items).SingleOrDefaultAsync(item => item.Id == request.SourceId && item.OrganizationId == organizationId);
-            if (contract is null) return Results.NotFound();
-            if (contract.Status != ContractStatus.Active) return StateConflict("Somente contratos ativos podem originar uma OS.");
-            quote = await db.Quotes.AsNoTracking().SingleOrDefaultAsync(item => item.Id == contract.QuoteId && item.OrganizationId == organizationId);
-            if (quote is null) return Results.NotFound();
-        }
-        if (string.IsNullOrWhiteSpace(quote.ServiceAddressSnapshot)) return Error("sourceId", "O orçamento de origem precisa ter um endereço de serviço válido.");
-        if (source == WorkOrderSourceType.Quote && quote.Items.Count == 0 || source == WorkOrderSourceType.Contract && contract!.Items.Count == 0)
-            return Error("sourceId", "A origem precisa conter pelo menos um serviço operacional.");
-        var previousOrderStatuses = await db.WorkOrders.Where(item => item.OrganizationId == organizationId && item.QuoteId == quote.Id)
-            .Select(item => item.Status).ToListAsync();
-        if (source == WorkOrderSourceType.Quote
-            ? previousOrderStatuses.Any(status => status != WorkOrderStatus.Cancelled)
-            : !WorkOrderRules.CanCreateFromContract(contract!.Status, previousOrderStatuses)) return Duplicate();
-        var assignee = await AssigneeAsync(db, organizationId, request.AssignedUserId);
-        if (!string.IsNullOrWhiteSpace(request.AssignedUserId) && assignee is null) return Error("assignedUserId", "Selecione um profissional ativo e elegível desta organização.");
 
-        var now = DateTimeOffset.UtcNow; var actor = Actor(context);
+        var organizationId = TenantContext.OrganizationId(context);
+        var contract = await db.Contracts.AsNoTracking().Include(item => item.Items)
+            .SingleOrDefaultAsync(item => item.Id == request.SourceId && item.OrganizationId == organizationId);
+        if (contract is null) return Results.NotFound();
+        if (contract.Status != ContractStatus.Active) return StateConflict("Somente contratos ativos podem originar uma OS.");
+
+        var quote = await db.Quotes.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == contract.QuoteId && item.OrganizationId == organizationId);
+        if (quote is null) return Results.NotFound();
+        if (string.IsNullOrWhiteSpace(quote.ServiceAddressSnapshot))
+            return Error("sourceId", "O orçamento de origem precisa ter um endereço de serviço válido.");
+        if (contract.Items.Count == 0)
+            return Error("sourceId", "O contrato precisa conter pelo menos um serviço operacional.");
+
+        var previousOrderStatuses = await db.WorkOrders
+            .Where(item => item.OrganizationId == organizationId && item.ContractId == contract.Id)
+            .Select(item => item.Status)
+            .ToListAsync();
+        if (!WorkOrderRules.CanCreateFromContract(contract.Status, previousOrderStatuses)) return Duplicate();
+
+        var assignee = await AssigneeAsync(db, organizationId, request.AssignedUserId);
+        if (!string.IsNullOrWhiteSpace(request.AssignedUserId) && assignee is null)
+            return Error("assignedUserId", "Selecione um profissional ativo e elegível desta organização.");
+
+        var now = DateTimeOffset.UtcNow;
+        var actor = Actor(context);
         await using var transaction = await db.Database.BeginTransactionAsync();
         var number = await AllocateNumberAsync(db, organizationId, TimeZoneInfo.ConvertTime(now, SaoPaulo).Year);
         if (number is null) return StateConflict("A numeração anual de OS atingiu o limite.");
+
         var order = new WorkOrder
         {
-            Id = Guid.NewGuid(), OrganizationId = organizationId, Number = number, SourceType = source, QuoteId = quote.Id, ContractId = contract?.Id,
-            CustomerId = quote.CustomerId, CustomerLegalNameSnapshot = quote.CustomerLegalNameSnapshot, ServiceAddressSnapshot = quote.ServiceAddressSnapshot.Trim(),
+            Id = Guid.NewGuid(), OrganizationId = organizationId, Number = number, SourceType = WorkOrderSourceType.Contract,
+            QuoteId = quote.Id, ContractId = contract.Id, CustomerId = quote.CustomerId,
+            CustomerLegalNameSnapshot = quote.CustomerLegalNameSnapshot, ServiceAddressSnapshot = quote.ServiceAddressSnapshot.Trim(),
             AssignedUserId = assignee?.Id, AssignedUserNameSnapshot = assignee?.FullName, AssignedUserEmailSnapshot = assignee?.Email,
             ScheduledStart = request.ScheduledStart, ScheduledEnd = request.ScheduledEnd, OperationalNotes = Trim(request.OperationalNotes),
             CreatedAtUtc = now, UpdatedAtUtc = now, CreatedByUserId = actor, UpdatedByUserId = actor, Version = Guid.NewGuid()
         };
-        order.Items = source == WorkOrderSourceType.Quote
-            ? quote.Items.Select(item => new WorkOrderItem { Id = Guid.NewGuid(), WorkOrderId = order.Id, QuoteItemId = item.Id, ServiceId = item.ServiceId, ServiceCodeSnapshot = item.ServiceCodeSnapshot, ServiceNameSnapshot = item.ServiceNameSnapshot, ServiceLineIdSnapshot = item.ServiceLineIdSnapshot, ServiceLineCodeSnapshot = item.ServiceLineCodeSnapshot, ServiceLineNameSnapshot = item.ServiceLineNameSnapshot, DisplayOrder = item.DisplayOrder }).ToList()
-            : contract!.Items.Select(item => new WorkOrderItem { Id = Guid.NewGuid(), WorkOrderId = order.Id, QuoteItemId = item.QuoteItemId, ContractItemId = item.Id, ServiceId = item.ServiceId, ServiceCodeSnapshot = item.ServiceCodeSnapshot, ServiceNameSnapshot = item.ServiceNameSnapshot, ServiceLineIdSnapshot = item.ServiceLineId, ServiceLineCodeSnapshot = item.ServiceLineCodeSnapshot, ServiceLineNameSnapshot = item.ServiceLineNameSnapshot, DisplayOrder = item.DisplayOrder }).ToList();
+        order.Items = contract.Items.Select(item => new WorkOrderItem
+        {
+            Id = Guid.NewGuid(), WorkOrderId = order.Id, QuoteItemId = item.QuoteItemId, ContractItemId = item.Id,
+            ServiceId = item.ServiceId, ServiceCodeSnapshot = item.ServiceCodeSnapshot, ServiceNameSnapshot = item.ServiceNameSnapshot,
+            ServiceLineIdSnapshot = item.ServiceLineId, ServiceLineCodeSnapshot = item.ServiceLineCodeSnapshot,
+            ServiceLineNameSnapshot = item.ServiceLineNameSnapshot, DisplayOrder = item.DisplayOrder
+        }).ToList();
+
         db.WorkOrders.Add(order);
-        Audit(db, order, actor, source == WorkOrderSourceType.Quote ? "WORK_ORDER_CREATED_FROM_QUOTE" : "WORK_ORDER_CREATED_FROM_CONTRACT", null);
+        Audit(db, order, actor, "WORK_ORDER_CREATED_FROM_CONTRACT", null);
         await CustomerActivityService.ReconcileAsync(db, order.CustomerId, actor, true, excludeWorkOrderId: order.Id);
         try { await db.SaveChangesAsync(); await transaction.CommitAsync(); }
         catch (DbUpdateException) { return Duplicate(); }
