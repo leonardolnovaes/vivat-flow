@@ -2,7 +2,7 @@ import { ApiError, request } from '../../api'
 import type { Contract, ContractInput, ContractList, ContractStatus } from './types'
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> { const response = await request(path, init); if (!response.ok) throw await ApiError.from(response); return response.json() as Promise<T> }
-const payload = (input: ContractInput) => ({ startDate: input.startDate || null, endDate: input.endDate || null, paymentTerms: input.paymentTerms.trim() || null, notes: input.notes.trim() || null })
+const payload = (input: ContractInput) => ({ kind: input.kind, startDate: input.startDate || null, endDate: input.endDate || null, paymentTerms: input.paymentTerms.trim() || null, notes: input.notes.trim() || null })
 export const listContracts = (query: URLSearchParams) => call<ContractList>(`/api/contracts?${query}`)
 export const getContract = (id: string) => call<Contract>(`/api/contracts/${id}`)
 export const createContract = (quoteId: string, input: ContractInput) => call<Contract>('/api/contracts', { method: 'POST', body: JSON.stringify({ quoteId, ...payload(input) }) })

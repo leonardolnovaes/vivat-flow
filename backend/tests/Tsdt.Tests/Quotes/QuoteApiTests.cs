@@ -40,7 +40,7 @@ public sealed class QuoteApiTests
         using var factory = new IdentityWebApplicationFactory(); using var admin = await ReadyAdmin(factory);
         var customer = await Customer(admin);
         var quote = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, "/api/quotes", new CreateQuoteRequest(customer.Id, [], null, null, null, null));
-        var response = await SendResponse(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/submit", new QuoteVersionRequest(quote.Version));
+        var response = await SendResponse(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/submit", new SendQuoteForApprovalRequest(quote.Version, [], null));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var errors = json.RootElement.GetProperty("errors");
@@ -54,12 +54,12 @@ public sealed class QuoteApiTests
         using var factory = new IdentityWebApplicationFactory(); using var admin = await ReadyAdmin(factory);
         var customer = await Send<CustomerDetailResponse>(admin, HttpMethod.Post, "/api/customers", new CreateCustomerRequest("Quote Customer", null, "04.252.011/0001-10", null));
         var unit = await Send<UnitMutationResponse>(admin, HttpMethod.Post, $"/api/customers/{customer.Id}/units", new CreateUnitRequest("Head Office", "Main Street", "1", null, null, "Sao Paulo", "SP", null, true, customer.Version));
-        await Send<ContactMutationResponse>(admin, HttpMethod.Post, $"/api/customers/{customer.Id}/contacts", new CreateContactRequest("Commercial contact", null, "contact@example.test", null, true, unit.Version));
+        var contact = await Send<ContactMutationResponse>(admin, HttpMethod.Post, $"/api/customers/{customer.Id}/contacts", new CreateContactRequest("Commercial contact", null, "contact@example.test", null, true, unit.Version));
         var service = await Send<ServiceDetailResponse>(admin, HttpMethod.Post, "/api/services", new CreateServiceRequest("PGR", "Risk Program", null, 100m, ServiceLineTestData.SstId));
         var quote = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, "/api/quotes", new CreateQuoteRequest(customer.Id, [new QuoteItemRequest(null, service.Id)], null, null, null, null));
         Assert.StartsWith("ORC-", quote.Number); Assert.Equal(QuoteStatus.Draft, quote.Status); Assert.Equal(customer.LegalName, quote.CustomerLegalNameSnapshot); Assert.Equal(service.Name, quote.Items.Single().ServiceNameSnapshot);
         var updated = await Send<QuoteDetailResponse>(admin, HttpMethod.Put, $"/api/quotes/{quote.Id}", new UpdateQuoteRequest(customer.Id, quote.Items.Select(x => new QuoteItemRequest(x.Id, x.ServiceId)).ToList(), 350m, QuotePaymentType.Cash, null, null, quote.Version, 20, QuoteRiskDegree.Two, unit.Unit.Id));
-        var submitted = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/submit", new QuoteVersionRequest(updated.Version));
+        var submitted = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/submit", new SendQuoteForApprovalRequest(updated.Version, [contact.Contact.Id], null));
         Assert.Equal(QuoteStatus.AwaitingApproval, submitted.Status);
         Assert.Equal(HttpStatusCode.Conflict, (await SendResponse(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/approve", new QuoteVersionRequest(updated.Version))).StatusCode);
         var approved = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/approve", new QuoteVersionRequest(submitted.Version));
@@ -84,7 +84,10 @@ public sealed class QuoteApiTests
         var customer = await Customer(admin); var draft = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, "/api/quotes", new CreateQuoteRequest(customer.Id, [], null, null, null, "  draft  "));
         Assert.Empty(draft.Items); Assert.Equal("draft", draft.Notes);
         var inactive = await SendResponse(admin, HttpMethod.Post, $"/api/customers/{customer.Id}/deactivate", new CustomerVersionRequest(customer.Version));
-        Assert.Equal(HttpStatusCode.OK, inactive.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, inactive.StatusCode);
+        await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{draft.Id}/cancel", new QuoteVersionRequest(draft.Version));
+        var currentCustomer = await admin.GetFromJsonAsync<CustomerDetailResponse>($"/api/customers/{customer.Id}");
+        Assert.False(currentCustomer!.IsActive);
         Assert.Equal(HttpStatusCode.BadRequest, (await SendResponse(admin, HttpMethod.Post, "/api/quotes", new CreateQuoteRequest(customer.Id, [], null, null, null, null))).StatusCode);
     }
 
@@ -106,13 +109,13 @@ public sealed class QuoteApiTests
     [Fact]
     public async Task Status_matrix_submission_validation_and_audit_actions_are_enforced()
     {
-        using var factory = new IdentityWebApplicationFactory(); using var admin = await ReadyAdmin(factory); var customer = await Customer(admin); var unit = await Send<UnitMutationResponse>(admin, HttpMethod.Post, $"/api/customers/{customer.Id}/units", new CreateUnitRequest("Head Office", "Main Street", "1", null, null, "Sao Paulo", "SP", null, true, customer.Version)); await Send<ContactMutationResponse>(admin, HttpMethod.Post, $"/api/customers/{customer.Id}/contacts", new CreateContactRequest("Commercial contact", null, "contact@example.test", null, true, unit.Version)); var service = await Service(admin, "PCMSO", "PCMSO");
+        using var factory = new IdentityWebApplicationFactory(); using var admin = await ReadyAdmin(factory); var customer = await Customer(admin); var unit = await Send<UnitMutationResponse>(admin, HttpMethod.Post, $"/api/customers/{customer.Id}/units", new CreateUnitRequest("Head Office", "Main Street", "1", null, null, "Sao Paulo", "SP", null, true, customer.Version)); var contact = await Send<ContactMutationResponse>(admin, HttpMethod.Post, $"/api/customers/{customer.Id}/contacts", new CreateContactRequest("Commercial contact", null, "contact@example.test", null, true, unit.Version)); var service = await Service(admin, "PCMSO", "PCMSO");
         var empty = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, "/api/quotes", new CreateQuoteRequest(customer.Id, [], null, null, null, null));
         Assert.Equal(HttpStatusCode.BadRequest, (await SendResponse(admin, HttpMethod.Post, $"/api/quotes/{empty.Id}/submit", new QuoteVersionRequest(empty.Version))).StatusCode);
         var quote = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, "/api/quotes", new CreateQuoteRequest(customer.Id, [new QuoteItemRequest(null, service.Id)], 200m, QuotePaymentType.Installments, 2, null, 20, QuoteRiskDegree.Two, unit.Unit.Id));
-        var submitted = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/submit", new QuoteVersionRequest(quote.Version));
+        var submitted = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/submit", new SendQuoteForApprovalRequest(quote.Version, [contact.Contact.Id], null));
         var reopened = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/reopen", new QuoteVersionRequest(submitted.Version));
-        var submittedAgain = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/submit", new QuoteVersionRequest(reopened.Version));
+        var submittedAgain = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/submit", new SendQuoteForApprovalRequest(reopened.Version, [contact.Contact.Id], null));
         var cancelled = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/cancel", new QuoteVersionRequest(submittedAgain.Version));
         Assert.Equal(QuoteStatus.Cancelled, cancelled.Status); Assert.Equal(HttpStatusCode.Conflict, (await SendResponse(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/approve", new QuoteVersionRequest(cancelled.Version))).StatusCode);
         using var scope = factory.Services.CreateScope(); var actions = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().QuoteAuditRecords.Where(x => x.QuoteId == quote.Id).Select(x => x.Action).ToListAsync(); Assert.Equal(["QUOTE_CREATED", "QUOTE_SENT_FOR_APPROVAL", "QUOTE_REOPENED", "QUOTE_SENT_FOR_APPROVAL", "QUOTE_CANCELLED"], actions);
@@ -147,12 +150,16 @@ public sealed class QuoteApiTests
         Assert.Equal(manager.Id, quote.ResponsibleUserId);
         Assert.Equal(HttpStatusCode.BadRequest, (await SendResponse(admin, HttpMethod.Put, $"/api/quotes/{quote.Id}", new UpdateQuoteRequest(customer.Id, [], null, null, null, null, quote.Version, ResponsibleUserId: user.Id))).StatusCode);
         var start = DateTimeOffset.UtcNow.AddDays(1); var invalid = await SendResponse(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/visits", new CreateQuoteVisitRequest(user.Id, start, start.AddHours(1), unit.Unit.Id, null)); Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        var nonexistentDate = await SendResponse(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/visits", new { assignedUserId = manager.Id, scheduledStart = "2026-09-31T22:00:00-03:00", scheduledEnd = (string?)null, customerUnitId = unit.Unit.Id, notes = (string?)null });
+        Assert.Equal(HttpStatusCode.BadRequest, nonexistentDate.StatusCode);
         var scheduled = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/visits", new CreateQuoteVisitRequest(manager.Id, start, start.AddHours(1), unit.Unit.Id, "Initial")); Assert.Equal(QuoteVisitStatus.Scheduled, scheduled.CurrentVisit!.Status);
         var rescheduled = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/visits/{scheduled.CurrentVisit.Id}/reschedule", new RescheduleQuoteVisitRequest(start.AddDays(1), start.AddDays(1).AddHours(1), "Changed")); Assert.Equal(start.AddDays(1), rescheduled.CurrentVisit!.ScheduledStart);
         var completed = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/visits/{scheduled.CurrentVisit.Id}/complete", new { }); Assert.Equal(QuoteVisitStatus.Completed, completed.CurrentVisit!.Status);
         Assert.Equal(HttpStatusCode.Conflict, (await SendResponse(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/visits/{scheduled.CurrentVisit.Id}/cancel", new { })).StatusCode);
         var second = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/visits", new CreateQuoteVisitRequest(manager.Id, start.AddDays(2), start.AddDays(2).AddHours(1), unit.Unit.Id, null));
         var cancelled = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/visits/{second.CurrentVisit!.Id}/cancel", new { }); Assert.Equal(QuoteVisitStatus.Cancelled, cancelled.CurrentVisit!.Status);
+        var openEnded = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/visits", new CreateQuoteVisitRequest(manager.Id, start.AddDays(3), null, unit.Unit.Id, null));
+        Assert.Null(openEnded.CurrentVisit!.ScheduledEnd);
     }
 
     private static async Task<HttpClient> ReadyAdmin(IdentityWebApplicationFactory factory) { var client = IdentityTestClient.Create(factory); await IdentityTestClient.LoginAsync(client); (await SendResponse(client, HttpMethod.Post, "/api/auth/change-password", new ChangePasswordRequest("Bootstrap1!Pass", "Changed1!Password"))).EnsureSuccessStatusCode(); await ServiceLineTestData.EnableSstForBootstrapOrganizationAsync(factory); return client; }

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Tsdt.Api.Contracts;
+using Tsdt.Api.Customers;
 using Tsdt.Api.Identity;
 using Tsdt.Api.Quotes;
 
@@ -18,6 +19,7 @@ public static class WorkOrderEndpoints
         var orders = app.MapGroup("/api/work-orders").RequireAuthorization(AuthorizationPolicies.WorkOrderExecution);
         orders.MapGet("", ListAsync);
         orders.MapGet("/eligible-assignees", EligibleAssigneesAsync).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
+        WorkOrderSourceEndpoints.Map(orders);
         orders.MapGet("/{id:guid}", GetAsync);
         orders.MapGet("/{id:guid}/history", HistoryAsync);
         orders.MapPost("/from-quote", (CreateWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => CreateAsync(request, WorkOrderSourceType.Quote, context, antiforgery, db)).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
@@ -121,7 +123,11 @@ public static class WorkOrderEndpoints
         if (string.IsNullOrWhiteSpace(quote.ServiceAddressSnapshot)) return Error("sourceId", "O orçamento de origem precisa ter um endereço de serviço válido.");
         if (source == WorkOrderSourceType.Quote && quote.Items.Count == 0 || source == WorkOrderSourceType.Contract && contract!.Items.Count == 0)
             return Error("sourceId", "A origem precisa conter pelo menos um serviço operacional.");
-        if (await db.WorkOrders.AnyAsync(item => item.OrganizationId == organizationId && item.QuoteId == quote.Id && item.Status != WorkOrderStatus.Cancelled)) return Duplicate();
+        var previousOrderStatuses = await db.WorkOrders.Where(item => item.OrganizationId == organizationId && item.QuoteId == quote.Id)
+            .Select(item => item.Status).ToListAsync();
+        if (source == WorkOrderSourceType.Quote
+            ? previousOrderStatuses.Any(status => status != WorkOrderStatus.Cancelled)
+            : !WorkOrderRules.CanCreateFromContract(contract!.Status, previousOrderStatuses)) return Duplicate();
         var assignee = await AssigneeAsync(db, organizationId, request.AssignedUserId);
         if (!string.IsNullOrWhiteSpace(request.AssignedUserId) && assignee is null) return Error("assignedUserId", "Selecione um profissional ativo e elegível desta organização.");
 
@@ -142,6 +148,7 @@ public static class WorkOrderEndpoints
             : contract!.Items.Select(item => new WorkOrderItem { Id = Guid.NewGuid(), WorkOrderId = order.Id, QuoteItemId = item.QuoteItemId, ContractItemId = item.Id, ServiceId = item.ServiceId, ServiceCodeSnapshot = item.ServiceCodeSnapshot, ServiceNameSnapshot = item.ServiceNameSnapshot, ServiceLineIdSnapshot = item.ServiceLineId, ServiceLineCodeSnapshot = item.ServiceLineCodeSnapshot, ServiceLineNameSnapshot = item.ServiceLineNameSnapshot, DisplayOrder = item.DisplayOrder }).ToList();
         db.WorkOrders.Add(order);
         Audit(db, order, actor, source == WorkOrderSourceType.Quote ? "WORK_ORDER_CREATED_FROM_QUOTE" : "WORK_ORDER_CREATED_FROM_CONTRACT", null);
+        await CustomerActivityService.ReconcileAsync(db, order.CustomerId, actor, true, excludeWorkOrderId: order.Id);
         try { await db.SaveChangesAsync(); await transaction.CommitAsync(); }
         catch (DbUpdateException) { return Duplicate(); }
         return Results.Created($"/api/work-orders/{order.Id}", Detail(order));
@@ -194,6 +201,7 @@ public static class WorkOrderEndpoints
         Touch(order, Actor(context));
         var action = target switch { WorkOrderStatus.Scheduled => "WORK_ORDER_SCHEDULED", WorkOrderStatus.InProgress => "WORK_ORDER_STARTED", WorkOrderStatus.AwaitingClosure => "WORK_ORDER_EXECUTION_COMPLETED", WorkOrderStatus.Closed => "WORK_ORDER_CLOSED", _ => "WORK_ORDER_CANCELLED" };
         Audit(db, order, Actor(context), action, target == WorkOrderStatus.AwaitingClosure && order.CompletionNotes is not null ? "CompletionNotes" : null);
+        await CustomerActivityService.ReconcileAsync(db, order.CustomerId, Actor(context), CustomerActivityService.IsActiveRelationship(target), excludeWorkOrderId: order.Id, cancelledWorkOrder: target == WorkOrderStatus.Cancelled);
         try { await db.SaveChangesAsync(); return Results.Ok(Detail(order)); } catch (DbUpdateConcurrencyException) { return Stale(); }
     }
 

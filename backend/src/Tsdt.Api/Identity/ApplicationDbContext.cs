@@ -25,6 +25,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<QuoteItem> QuoteItems => Set<QuoteItem>();
     public DbSet<QuoteAuditRecord> QuoteAuditRecords => Set<QuoteAuditRecord>();
     public DbSet<QuoteVisit> QuoteVisits => Set<QuoteVisit>();
+    public DbSet<QuoteApprovalRecipient> QuoteApprovalRecipients => Set<QuoteApprovalRecipient>();
     public DbSet<QuoteNumberCounter> QuoteNumberCounters => Set<QuoteNumberCounter>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<ContractItem> ContractItems => Set<ContractItem>();
@@ -161,6 +162,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         builder.Entity<QuoteItem>(entity => { entity.ToTable("QuoteItems"); entity.HasKey(item => item.Id); entity.Property(item => item.ServiceCodeSnapshot).IsRequired().HasMaxLength(50); entity.Property(item => item.ServiceNameSnapshot).IsRequired().HasMaxLength(160); entity.Property(item => item.ServiceLineCodeSnapshot).IsRequired().HasMaxLength(50); entity.Property(item => item.ServiceLineNameSnapshot).IsRequired().HasMaxLength(160); entity.HasIndex(item => new { item.QuoteId, item.DisplayOrder }).IsUnique(); entity.HasOne(item => item.Quote).WithMany(quote => quote.Items).HasForeignKey(item => item.QuoteId).OnDelete(DeleteBehavior.Restrict); entity.HasOne(item => item.Service).WithMany().HasForeignKey(item => item.ServiceId).OnDelete(DeleteBehavior.Restrict); });
         builder.Entity<QuoteAuditRecord>(entity => { entity.ToTable("QuoteAuditRecords"); entity.HasKey(record => record.Id); entity.Property(record => record.ActorUserId).IsRequired(); entity.Property(record => record.Action).IsRequired().HasMaxLength(80); entity.Property(record => record.ChangedFields).HasMaxLength(500); entity.HasIndex(record => new { record.QuoteId, record.OccurredAtUtc }); entity.HasOne(record => record.Quote).WithMany().HasForeignKey(record => record.QuoteId).OnDelete(DeleteBehavior.Restrict); });
         builder.Entity<QuoteVisit>(entity => { entity.ToTable("QuoteVisits"); entity.HasKey(visit => visit.Id); entity.Property(visit => visit.AssignedUserId).IsRequired(); entity.Property(visit => visit.LocationSnapshot).HasMaxLength(700); entity.Property(visit => visit.Notes).HasMaxLength(2000); entity.Property(visit => visit.CreatedByUserId).IsRequired(); entity.Property(visit => visit.UpdatedByUserId).IsRequired(); entity.HasIndex(visit => visit.QuoteId); entity.HasIndex(visit => visit.AssignedUserId); entity.HasIndex(visit => visit.ScheduledStart); entity.HasOne(visit => visit.Quote).WithMany(quote => quote.Visits).HasForeignKey(visit => visit.QuoteId).OnDelete(DeleteBehavior.Restrict); entity.HasOne(visit => visit.AssignedUser).WithMany().HasForeignKey(visit => visit.AssignedUserId).OnDelete(DeleteBehavior.Restrict); });
+        builder.Entity<QuoteApprovalRecipient>(entity => { entity.ToTable("QuoteApprovalRecipients"); entity.HasKey(item => new { item.QuoteId, item.CustomerContactId }); entity.HasOne(item => item.Quote).WithMany(quote => quote.ApprovalRecipients).HasForeignKey(item => item.QuoteId).OnDelete(DeleteBehavior.Restrict); entity.HasOne(item => item.Contact).WithMany().HasForeignKey(item => item.CustomerContactId).OnDelete(DeleteBehavior.Restrict); });
         builder.Entity<QuoteNumberCounter>(entity => { entity.ToTable("QuoteNumberCounters", table => table.HasCheckConstraint("CK_QuoteNumberCounters_LastNumber_Range", "\"LastNumber\" >= 1 AND \"LastNumber\" <= 999999")); entity.HasKey(counter => counter.Year); });
         builder.Entity<Contract>(entity =>
         {
@@ -169,6 +171,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(contract => contract.CustomerLegalNameSnapshot).IsRequired().HasMaxLength(200);
             entity.Property(contract => contract.ApprovedTotalAmount).HasPrecision(18, 2);
             entity.Property(contract => contract.Status).HasConversion<string>().HasMaxLength(16);
+            entity.Property(contract => contract.Kind).HasConversion<string>().HasMaxLength(16);
             entity.Property(contract => contract.PaymentType).HasConversion<string>().HasMaxLength(16);
             entity.Property(contract => contract.PaymentTerms).HasMaxLength(2000);
             entity.Property(contract => contract.Notes).HasMaxLength(2000);
@@ -209,7 +212,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(item => item.CreatedByUserId).IsRequired(); entity.Property(item => item.UpdatedByUserId).IsRequired();
             entity.Property(item => item.Version).IsConcurrencyToken();
             entity.HasIndex(item => new { item.OrganizationId, item.Number }).IsUnique();
-            entity.HasIndex(item => new { item.OrganizationId, item.QuoteId }).IsUnique().HasFilter("\"Status\" <> 'Cancelled'");
+            entity.HasIndex(item => new { item.OrganizationId, item.QuoteId }).IsUnique().HasFilter("\"Status\" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')");
             entity.HasIndex(item => new { item.OrganizationId, item.ContractId }).HasFilter("\"ContractId\" IS NOT NULL");
             entity.HasIndex(item => new { item.OrganizationId, item.Status, item.UpdatedAtUtc });
             entity.HasIndex(item => new { item.OrganizationId, item.AssignedUserId, item.UpdatedAtUtc });

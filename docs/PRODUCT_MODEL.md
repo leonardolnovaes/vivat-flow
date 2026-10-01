@@ -58,6 +58,8 @@ The user explicitly chooses to create a Contract from an approved Quote. The app
 
 A Contract may contain Services from multiple Service Lines. Do **not** add `Contract.ServiceLineId`.
 
+Contracts have two commercial kinds: `OneOff` (Pontual) for defined, non-recurring engagements and `Recurring` (Recorrente) for ongoing or period-based service relationships. Both kinds keep the Customer active while the Contract is Active. An Active Contract can originate successive Work Orders; only one unfinished Work Order may cover the same originating Quote scope at a time. Contract closure ends its own active relationship without erasing other active Quotes or execution.
+
 Contract items preserve historical Service and Service Line snapshots copied from the approved Quote items, not from the mutable current Service Catalog.
 
 Current Contract lifecycle:
@@ -71,7 +73,7 @@ Activation requires a start date. Invalid backward or repeated transitions are r
 
 ## Work Orders and execution
 
-Work Orders are the explicit execution boundary, separate from Quote and Contract commercial formalization. One Work Order covers the complete source scope. Management creates it from an approved Quote without a governing Draft or Active Contract, or from an Active Contract. Approval, formalization, and activation never create one automatically. A cancelled Work Order may be replaced; a non-cancelled Work Order prevents another for the same originating Quote scope.
+Work Orders are the explicit execution boundary, separate from Quote and Contract commercial formalization. One Work Order covers the complete source scope. The primary UI creates them from an Active Contract. The existing API also accepts an approved Quote without a governing Draft or Active Contract. Approval, formalization, and activation never create a Work Order automatically. An Active Contract can originate another Work Order after the previous one closes or is cancelled; simultaneous unfinished Work Orders for the same Quote scope remain blocked.
 
 Work Orders snapshot the originating Quote's service address and operational item scope from Quote items or Contract items. Operational responses exclude prices and payment terms. The lifecycle is Draft, Scheduled, InProgress, AwaitingClosure, Closed, or Cancelled. Execution completion means the assigned professional finished work; management closure is a separate acceptance action. Delivery remains independent.
 

@@ -61,7 +61,7 @@ Contracts represent explicit formalization after approval: what was contracted, 
 
 Approval does not auto-create a Contract. Contract creation is an explicit user action. Contract scope is inherited from the approved Quote and is not silently editable.
 
-Work Orders are a separate execution boundary. They may originate explicitly from an approved Quote or Active Contract and retain operational snapshots without exposing commercial values.
+Work Orders are a separate execution boundary. The primary UI creates them explicitly from an Active Contract; the existing API can also create them directly from an approved Quote without a governing Contract. Both retain operational snapshots without exposing commercial values.
 
 ## Backend and data
 

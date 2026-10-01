@@ -133,6 +133,8 @@ public static partial class CustomerEndpoints
         if (customer.Version != request.ExpectedVersion) return Stale();
         if (customer.IsActive != active)
         {
+            if (!active && await CustomerActivityService.HasActiveRelationshipsAsync(db, id))
+                return Results.Conflict(new { error = "Este cliente possui orçamento, contrato ou OS em andamento e não pode ser desativado." });
             customer.IsActive = active; Touch(customer, GetActor(context));
             AddAudit(db, id, customer.UpdatedByUserId, active ? "CUSTOMER_ACTIVATED" : "CUSTOMER_DEACTIVATED", "IsActive");
             return await SaveAsync(db, () => Results.Ok(ToDetail(customer)));

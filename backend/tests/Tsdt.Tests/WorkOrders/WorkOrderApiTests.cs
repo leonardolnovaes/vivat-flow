@@ -20,7 +20,7 @@ public sealed class WorkOrderApiTests
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
-    [Fact, Trait("Category", "Unit")]
+    [Fact, Trait("Category", "Integration")]
     public async Task Quote_creation_preserves_operational_snapshots_rejects_duplicates_and_allows_cancelled_replacement()
     {
         using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
@@ -40,7 +40,7 @@ public sealed class WorkOrderApiTests
         Assert.Equal("Historical service", replacement.Items.Single().ServiceNameSnapshot);
     }
 
-    [Fact, Trait("Category", "Unit")]
+    [Fact, Trait("Category", "Integration")]
     public async Task Contract_governance_and_source_validation_are_enforced()
     {
         using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
@@ -62,7 +62,7 @@ public sealed class WorkOrderApiTests
         }
     }
 
-    [Fact, Trait("Category", "Unit")]
+    [Fact, Trait("Category", "Integration")]
     public async Task Assigned_user_can_execute_only_own_work_and_management_closes()
     {
         using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
@@ -92,7 +92,7 @@ public sealed class WorkOrderApiTests
         Assert.Equal(HttpStatusCode.Conflict, (await Post(admin, $"/api/work-orders/{order.Id}/cancel", new WorkOrderVersionRequest(closed.Version))).StatusCode);
     }
 
-    [Fact, Trait("Category", "Unit")]
+    [Fact, Trait("Category", "Integration")]
     public async Task Planning_requires_eligible_assignee_and_valid_schedule()
     {
         using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
@@ -114,7 +114,7 @@ public sealed class WorkOrderApiTests
         Assert.Equal(HttpStatusCode.BadRequest, (await SendResponse(admin, HttpMethod.Put, $"/api/work-orders/{order.Id}/planning", new UpdateWorkOrderPlanningRequest(null, start, start.AddHours(1), null, scheduled.Version))).StatusCode);
     }
 
-    [Fact, Trait("Category", "Unit")]
+    [Fact, Trait("Category", "Integration")]
     public async Task Tenant_and_platform_boundaries_and_invalid_quote_source_are_enforced()
     {
         using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
