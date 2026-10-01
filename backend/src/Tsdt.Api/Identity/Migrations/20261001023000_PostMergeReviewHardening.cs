@@ -11,6 +11,26 @@ public partial class PostMergeReviewHardening : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
+        migrationBuilder.DropIndex(
+            name: "IX_WorkOrders_OrganizationId_ContractId",
+            table: "WorkOrders");
+
+        migrationBuilder.DropIndex(
+            name: "IX_WorkOrders_OrganizationId_QuoteId",
+            table: "WorkOrders");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_WorkOrders_OrganizationId_ContractId",
+            table: "WorkOrders",
+            columns: new[] { "OrganizationId", "ContractId" },
+            unique: true,
+            filter: "\"ContractId\" IS NOT NULL AND \"Status\" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_WorkOrders_OrganizationId_QuoteId",
+            table: "WorkOrders",
+            columns: new[] { "OrganizationId", "QuoteId" });
+
         migrationBuilder.AddColumn<string>(
             name: "NameSnapshot",
             table: "QuoteApprovalRecipients",
@@ -71,6 +91,27 @@ public partial class PostMergeReviewHardening : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        migrationBuilder.DropIndex(
+            name: "IX_WorkOrders_OrganizationId_ContractId",
+            table: "WorkOrders");
+
+        migrationBuilder.DropIndex(
+            name: "IX_WorkOrders_OrganizationId_QuoteId",
+            table: "WorkOrders");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_WorkOrders_OrganizationId_ContractId",
+            table: "WorkOrders",
+            columns: new[] { "OrganizationId", "ContractId" },
+            filter: "\"ContractId\" IS NOT NULL");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_WorkOrders_OrganizationId_QuoteId",
+            table: "WorkOrders",
+            columns: new[] { "OrganizationId", "QuoteId" },
+            unique: true,
+            filter: "\"Status\" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')");
+
         migrationBuilder.AddColumn<string>(
             name: "Type",
             table: "Contracts",
