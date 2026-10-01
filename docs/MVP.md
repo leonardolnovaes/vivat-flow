@@ -14,7 +14,7 @@ The product CORE is generic. SST/TST is the first vertical and CDS is the first 
 4. Service Lines and Service Catalog
 5. Quotes, commercial approval, assignment, and visits
 6. Contracts
-7. Work Orders
+7. Work Orders and Agenda (day, week, month)
 8. Documents
 9. Deliveries
 10. Dashboard
@@ -37,6 +37,8 @@ Commercial values may exist, but the initial operational MVP does not implement 
 Work Orders own execution-specific state: assignment, dates, operational progress, and notes. Management creates a Work Order explicitly from an Active Contract. Historical Quote-origin Work Orders remain readable, but new Work Orders cannot bypass Contract formalization. Operational completion and management closure are separate transitions; Delivery remains independent.
 
 Do not collapse Work Orders into Quote or Contract merely to accelerate implementation. Commercial formalization and operational execution are separate boundaries.
+
+Agenda is the read/navigation surface between Work Order planning and execution. It uses Work Order schedules and historical snapshots, with no separate appointment aggregate. Scheduled, InProgress, AwaitingClosure, and Closed orders with valid schedules appear; Draft and Cancelled orders do not. Management can filter the Organization's schedule by eligible professional; USER sees only assigned work. Scheduling changes remain in the Work Order planning flow.
 
 The intended permission direction is phase-aware: management owns commercial/formalization phases, operational users receive only the execution scope required for assigned work, and management regains closure/receipt controls.
 

@@ -79,6 +79,12 @@ New Work Orders snapshot the service address from the originating Quote and the 
 
 ADMIN and MANAGER manage tenant Work Orders and may perform execution actions. USER can see only assigned Work Orders and may start or complete their own work. Platform Administrators have no Work Order access. Recurrence, partial execution, and multiple assignees are outside this MVP.
 
+## Agenda
+
+Agenda reads Work Orders, never duplicates their scheduling data. `GET /api/work-orders/agenda` requires offset-aware `from` and `to` timestamps for a forward interval of at most 62 days. Results overlap `[from, to)` when `ScheduledStart < to && ScheduledEnd > from`, have valid schedules, and are Scheduled, InProgress, AwaitingClosure, or Closed. Ordering is start, end, number, then id; bounded results are not paginated. Services, customer, address, and responsible name come from historical Work Order snapshots.
+
+ADMIN/MANAGER see their Organization's entries and may filter by professional. USER is always scoped to authenticated assignment, ignoring requested assignee filters. Platform Administrators have no operational access. Browser-local day/week/month boundaries are sent as ISO instants. Agenda links to Work Order details; editing, recurrence, synchronization, notifications, and conflict prevention are outside this MVP.
+
 ## Historical integrity
 
 Historical commercial and contractual records must remain readable even when current configuration changes.

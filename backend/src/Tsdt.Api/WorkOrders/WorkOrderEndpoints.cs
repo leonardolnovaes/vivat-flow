@@ -17,6 +17,7 @@ public static class WorkOrderEndpoints
     {
         var orders = app.MapGroup("/api/work-orders").RequireAuthorization(AuthorizationPolicies.WorkOrderExecution);
         orders.MapGet("", ListAsync);
+        orders.MapGet("/agenda", AgendaAsync);
         orders.MapGet("/eligible-assignees", EligibleAssigneesAsync).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
         WorkOrderSourceEndpoints.Map(orders);
         orders.MapGet("/{id:guid}", GetAsync);
@@ -33,7 +34,26 @@ public static class WorkOrderEndpoints
     private static bool IsManagement(HttpContext context) => context.User.IsInRole(IdentityRoles.Admin) || context.User.IsInRole(IdentityRoles.Manager);
     private static string Actor(HttpContext context) => context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new UnauthorizedAccessException();
     private static IQueryable<WorkOrder> Visible(ApplicationDbContext db, HttpContext context) =>
-        db.WorkOrders.Where(order => order.OrganizationId == TenantContext.OrganizationId(context) && (IsManagement(context) || order.AssignedUserId == Actor(context)));
+        WorkOrderAgendaQuery.Visible(db.WorkOrders, TenantContext.OrganizationId(context), IsManagement(context), Actor(context));
+
+    private static async Task<IResult> AgendaAsync(string? from, string? to, string? assignedUserId, HttpContext context, ApplicationDbContext db)
+    {
+        if (!WorkOrderAgendaQuery.TryTimestamp(from, out var start)) return Error("from", "Informe o início com data, horário e fuso horário válidos.");
+        if (!WorkOrderAgendaQuery.TryTimestamp(to, out var end)) return Error("to", "Informe o término com data, horário e fuso horário válidos.");
+        var error = WorkOrderAgendaQuery.RangeError(start, end);
+        if (error is not null) return Error("to", error);
+        var query = WorkOrderAgendaQuery.InRange(Visible(db, context).AsNoTracking(), start, end);
+        query = WorkOrderAgendaQuery.ForAssignee(query, IsManagement(context), assignedUserId);
+        var entries = await query.OrderBy(order => order.ScheduledStart).ThenBy(order => order.ScheduledEnd)
+            .ThenBy(order => order.Number).ThenBy(order => order.Id)
+            .Select(order => new WorkOrderAgendaResponse(order.Id, order.Number, order.CustomerLegalNameSnapshot,
+                order.ServiceAddressSnapshot, order.Status, order.AssignedUserId, order.AssignedUserNameSnapshot,
+                order.ScheduledStart!.Value, order.ScheduledEnd!.Value,
+                order.Items.OrderBy(item => item.DisplayOrder).ThenBy(item => item.Id)
+                    .Select(item => new WorkOrderAgendaServiceResponse(item.ServiceCodeSnapshot, item.ServiceNameSnapshot)).ToList()))
+            .ToListAsync();
+        return Results.Ok(entries);
+    }
 
     private static async Task<IResult> ListAsync(int? page, int? pageSize, WorkOrderStatus? status, string? assignedUserId, Guid? quoteId, Guid? contractId, HttpContext context, ApplicationDbContext db)
     {

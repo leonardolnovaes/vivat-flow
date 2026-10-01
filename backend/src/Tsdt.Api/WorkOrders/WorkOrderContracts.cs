@@ -1,5 +1,8 @@
 namespace Tsdt.Api.WorkOrders;
 
+public sealed record WorkOrderAgendaServiceResponse(string ServiceCodeSnapshot, string ServiceNameSnapshot);
+public sealed record WorkOrderAgendaResponse(Guid Id, string Number, string CustomerLegalNameSnapshot, string ServiceAddressSnapshot, WorkOrderStatus Status, string? AssignedUserId, string? AssignedUserNameSnapshot, DateTimeOffset ScheduledStart, DateTimeOffset ScheduledEnd, IReadOnlyList<WorkOrderAgendaServiceResponse> Services);
+
 public sealed record CreateWorkOrderRequest(Guid SourceId, string? AssignedUserId, DateTimeOffset? ScheduledStart, DateTimeOffset? ScheduledEnd, string? OperationalNotes);
 public sealed record UpdateWorkOrderPlanningRequest(string? AssignedUserId, DateTimeOffset? ScheduledStart, DateTimeOffset? ScheduledEnd, string? OperationalNotes, Guid ExpectedVersion);
 public sealed record WorkOrderVersionRequest(Guid ExpectedVersion);

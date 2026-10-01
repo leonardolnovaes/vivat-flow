@@ -1,16 +1,17 @@
+import { Badge, labels } from './WorkOrderStatusBadge'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Dispatch, FormEvent, ReactNode, SetStateAction } from 'react'
 import { ApiError } from '../../api'
 import { LoadingState } from '../../components/LoadingState'
 import { WorkOrderSourcePicker } from './WorkOrderSourcePicker'
 import { createWorkOrder, getEligibleAssignees, getWorkOrder, getWorkOrderHistory, getWorkOrderSource, listWorkOrders, saveWorkOrderPlanning, toLocalInput, transitionWorkOrder } from './workOrderApi'
-import type { EligibleAssignee, Planning, WorkOrder, WorkOrderHistory, WorkOrderItem, WorkOrderList, WorkOrderSourceItem, WorkOrderStatus } from './types'
+import type { EligibleAssignee, Planning, WorkOrder, WorkOrderHistory, WorkOrderItem, WorkOrderList, WorkOrderSourceItem } from './types'
 
 type Props = { path: string; go: (path: string, replace?: boolean) => void; onSessionExpired: () => void; user: { id: string; roles: string[] } }
 type Errors = Record<string, string[]>
 type Source = { id: string; kind: 'contract'; status: string; customer: string; address: string | null; items: WorkOrderSourceItem[]; canCreate: boolean }
 const blank: Planning = { assignedUserId: '', scheduledStart: '', scheduledEnd: '', operationalNotes: '' }
-const labels: Record<WorkOrderStatus, string> = { Draft: 'Rascunho', Scheduled: 'Agendada', InProgress: 'Em andamento', AwaitingClosure: 'Aguardando encerramento', Closed: 'Encerrada', Cancelled: 'Cancelada' }
+
 const events: Record<string, string> = { WORK_ORDER_CREATED_FROM_QUOTE: 'OS criada a partir do orçamento', WORK_ORDER_CREATED_FROM_CONTRACT: 'OS criada a partir do contrato', WORK_ORDER_PLANNING_UPDATED: 'Planejamento atualizado', WORK_ORDER_SCHEDULED: 'OS agendada', WORK_ORDER_STARTED: 'Execução iniciada', WORK_ORDER_EXECUTION_COMPLETED: 'Execução concluída', WORK_ORDER_CLOSED: 'OS encerrada', WORK_ORDER_CANCELLED: 'OS cancelada' }
 const management = (user: Props['user']) => user.roles.includes('ADMIN') || user.roles.includes('MANAGER')
 const date = (value: string | null) => value ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : 'Não informado'
@@ -180,7 +181,7 @@ function Detail({ id, go, onSessionExpired, user }: Props & { id: string }) {
 function PlanningFields({ form, setForm, errors, people, pending }: { form: Planning; setForm: Dispatch<SetStateAction<Planning>>; errors: Errors; people: EligibleAssignee[]; pending: boolean }) {
   return <div className="wo-form-grid"><Field label="Profissional responsável" errors={errors.assignedUserId}><select disabled={pending} value={form.assignedUserId} onChange={event => setForm(current => ({ ...current, assignedUserId: event.target.value }))}><option value="">Não atribuído</option>{people.map(person => <option key={person.id} value={person.id}>{person.fullName}</option>)}</select></Field><Field label="Início previsto" errors={errors.scheduledStart}><input disabled={pending} type="datetime-local" value={form.scheduledStart} onChange={event => setForm(current => ({ ...current, scheduledStart: event.target.value }))}/></Field><Field label="Término previsto" errors={errors.scheduledEnd}><input disabled={pending} type="datetime-local" value={form.scheduledEnd} onChange={event => setForm(current => ({ ...current, scheduledEnd: event.target.value }))}/></Field><Field label="Observações operacionais" errors={errors.operationalNotes}><textarea disabled={pending} maxLength={2000} value={form.operationalNotes} onChange={event => setForm(current => ({ ...current, operationalNotes: event.target.value }))}/></Field></div>
 }
-function Badge({ status }: { status: WorkOrderStatus }) { return <span className={`wo-status wo-status-${status}`}>{labels[status]}</span> }
+
 function Services({ items }: { items: WorkOrderSourceItem[] | WorkOrderItem[] }) { return items.length ? <div className="wo-services">{[...items].sort((a, b) => a.displayOrder - b.displayOrder).map(item => <div className="wo-service" key={`${item.displayOrder}-${item.serviceCodeSnapshot}`}><strong>{item.serviceCodeSnapshot} · {item.serviceNameSnapshot}</strong><small>{item.serviceLineCodeSnapshot} · {item.serviceLineNameSnapshot}</small></div>)}</div> : <p>Nenhum serviço informado.</p> }
 function Info({ label, value }: { label: string; value: string }) { return <><dt>{label}</dt><dd>{value}</dd></> }
 function Field({ label, errors, children }: { label: string; errors?: string[]; children: ReactNode }) { return <label>{label}{children}{errors?.map(item => <small className="error" role="alert" key={item}>{item}</small>)}</label> }

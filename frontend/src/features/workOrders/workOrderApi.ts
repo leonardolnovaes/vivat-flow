@@ -1,5 +1,5 @@
 import { ApiError, request } from '../../api'
-import type { EligibleAssignee, Planning, WorkOrder, WorkOrderHistory, WorkOrderList, WorkOrderSourceDetail, WorkOrderSourceList, WorkOrderSource } from './types'
+import type { AgendaEntry, EligibleAssignee, Planning, WorkOrder, WorkOrderHistory, WorkOrderList, WorkOrderSourceDetail, WorkOrderSourceList, WorkOrderSource } from './types'
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await request(path, init)
@@ -26,3 +26,5 @@ export function toLocalInput(value: string | null) {
 }
 function toOffsetIso(value: string) { return value ? new Date(value).toISOString() : null }
 function planningPayload(planning: Planning) { return { assignedUserId: planning.assignedUserId || null, scheduledStart: toOffsetIso(planning.scheduledStart), scheduledEnd: toOffsetIso(planning.scheduledEnd), operationalNotes: planning.operationalNotes.trim() || null } }
+
+export const getAgenda = (query: URLSearchParams) => call<AgendaEntry[]>(`/api/work-orders/agenda?${query}`)

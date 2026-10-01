@@ -11,3 +11,5 @@ export type WorkOrderSourceSummary = { id: string; sourceType: WorkOrderSource; 
 export type WorkOrderSourceItem = Pick<WorkOrderItem, 'serviceCodeSnapshot' | 'serviceNameSnapshot' | 'serviceLineCodeSnapshot' | 'serviceLineNameSnapshot' | 'displayOrder'>
 export type WorkOrderSourceDetail = { source: WorkOrderSourceSummary; items: WorkOrderSourceItem[] }
 export type WorkOrderSourceList = { items: WorkOrderSourceSummary[]; page: number; pageSize: number; totalCount: number }
+
+export type AgendaEntry = Pick<WorkOrderSummary, 'id' | 'number' | 'customerLegalNameSnapshot' | 'status' | 'assignedUserId' | 'assignedUserNameSnapshot'> & { serviceAddressSnapshot: string; scheduledStart: string; scheduledEnd: string; services: { serviceCodeSnapshot: string; serviceNameSnapshot: string }[] }
