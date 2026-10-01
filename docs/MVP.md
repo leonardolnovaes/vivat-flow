@@ -84,8 +84,8 @@ The MVP should allow an authorized tenant to:
 2. maintain Customers and units;
 3. configure Services under enabled Service Lines;
 4. create and approve a multi-item Quote;
-5. explicitly formalize and activate an approved Quote into a Contract when formalization is required;
-6. execute future Work Orders without losing tenant or commercial context;
+5. explicitly formalize and activate an approved Quote into a Contract before creating a Work Order;
+6. execute Work Orders without losing tenant or commercial context;
 7. attach future Documents and register Delivery independently from completion;
 8. preserve important audit history and actionable operational visibility.
 

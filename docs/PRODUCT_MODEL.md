@@ -24,7 +24,7 @@ Tenant operational records must always be isolated by Organization on the backen
 
 The Vivat Flow Control Plane manages the platform, not the tenant's business operation.
 
-Platform Administrators may manage Organization identity, lifecycle, platform access, and Organization-to-Service-Line enablement. They must not gain operational access to tenant Customers, Services, Quotes, Contracts, future Work Orders, documents, or other business records.
+Platform Administrators may manage Organization identity, lifecycle, platform access, and Organization-to-Service-Line enablement. They must not gain operational access to tenant Customers, Services, Quotes, Contracts, Work Orders, documents, or other business records.
 
 The Control Plane administers the board; tenant users operate the business.
 
@@ -58,7 +58,7 @@ The user explicitly chooses to create a Contract from an approved Quote. The app
 
 A Contract may contain Services from multiple Service Lines. Do **not** add `Contract.ServiceLineId`.
 
-Contracts have two commercial kinds: `OneOff` (Pontual) for defined, non-recurring engagements and `Recurring` (Recorrente) for ongoing or period-based service relationships. Both kinds keep the Customer active while the Contract is Active. An Active Contract can originate successive Work Orders; only one unfinished Work Order may cover the same originating Quote scope at a time. Contract closure ends its own active relationship without erasing other active Quotes or execution.
+Contracts have two commercial kinds: `OneOff` (Pontual) for defined, non-recurring engagements and `Recurring` (Recorrente) for ongoing or period-based service relationships. A Customer may have multiple independent Contracts, including simultaneous or successive Contracts of different kinds. Both kinds keep the Customer active while the Contract is Active. An Active Contract can originate successive Work Orders; only one unfinished Work Order may cover the same Contract scope at a time. An unfinished legacy Quote-origin Work Order without a Contract also blocks new execution for Contracts originating from that Quote until it closes or is cancelled. Contract closure ends its own active relationship without erasing other active Quotes or execution.
 
 Contract items preserve historical Service and Service Line snapshots copied from the approved Quote items, not from the mutable current Service Catalog.
 

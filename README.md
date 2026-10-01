@@ -1,6 +1,6 @@
 # Vivat Flow
 
-Vivat Flow is a multi-tenant SaaS platform for service companies. The product is intentionally generic at its core: tenant administration, customers, service catalog, service lines, quotes, contracts, future work orders, documents, notifications, audit, and billing-related capabilities must not depend on a specific vertical.
+Vivat Flow is a multi-tenant SaaS platform for service companies. The product is intentionally generic at its core: tenant administration, customers, service catalog, service lines, quotes, contracts, work orders, documents, notifications, audit, and billing-related capabilities must not depend on a specific vertical.
 
 SST/TST is the first vertical and CDS – Treinamento e Segurança do Trabalho is the first pilot context. Cleaning, Flooring, clinics, and other service businesses must be able to use the same core without duplicating the product.
 
@@ -12,7 +12,7 @@ SST/TST is the first vertical and CDS – Treinamento e Segurança do Trabalho i
 - Multi-tenant Organization boundary
 - Separate Vivat Flow Control Plane for platform administration
 - Global Service Lines enabled per Organization
-- Tenant-owned Customers, Services, Quotes, Contracts, and future operational records
+- Tenant-owned Customers, Services, Quotes, Contracts, Work Orders, and future operational records
 - Privacy-by-design, security-by-design, and LGPD-aware data minimization
 
 The current technical namespace and solution still use the historical `Tsdt` name. Do not rename those identifiers as incidental cleanup; a repository-wide rename is a separate refactor.
