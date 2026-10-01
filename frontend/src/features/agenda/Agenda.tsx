@@ -36,6 +36,7 @@ export function Agenda({ user, go, onSessionExpired }: Props) {
   const management = user.roles.includes('ADMIN') || user.roles.includes('MANAGER')
   const [view, setView] = useState<AgendaView>(() => { const requested = new URLSearchParams(window.location.search).get('view'); return requested === 'week' || requested === 'month' ? requested : 'day' }), [date, setDate] = useState(initialDate)
   const [highlight] = useState(() => new URLSearchParams(window.location.search).get('workOrderId'))
+  const [confirmation] = useState(() => new URLSearchParams(window.location.search).get('confirmation'))
   const [assignee, setAssignee] = useState(''), [people, setPeople] = useState<EligibleAssignee[]>([])
   const [entries, setEntries] = useState<AgendaEntry[] | null>(null), [error, setError] = useState('')
   const [peopleLoading, setPeopleLoading] = useState(management), [peopleError, setPeopleError] = useState(false)
@@ -83,25 +84,31 @@ export function Agenda({ user, go, onSessionExpired }: Props) {
     </section>
     {error ? <section className="card error-panel" role="alert"><p>{error}</p><button className="secondary" onClick={() => void load()}>Tentar novamente</button></section> : entries === null ? <LoadingState /> : <>
       {!entries.length && <section className="card empty-state" role="status"><h3>{view === 'day' ? assignee ? text.filteredDay : text.emptyDay : assignee ? text.filteredPeriod : text.emptyPeriod}</h3><p>Use os controles para consultar outras datas.</p></section>}
-      {highlight && entries.some(entry => entry.id === highlight) && <p className="agenda-confirmation" role="status">OS agendada com sucesso. O serviço está destacado abaixo.</p>}
+      {highlight && entries.some(entry => entry.id === highlight) && <p className="agenda-confirmation" role="status">{confirmation === 'rescheduled' ? 'Agendamento atualizado com sucesso.' : 'OS agendada com sucesso.'} O serviço está destacado abaixo.</p>}
       <div className="agenda-calendar-scroll">
       {view === 'month' && <div className="agenda-weekdays" aria-hidden="true">{weekdays.map(label => <strong key={label}>{label}</strong>)}</div>}
       <div className={`agenda-${view}`}>
         {period.days.map(day => {
           const daily = entries.filter(entry => scheduledOnDay(entry, day)).sort((a, b) => (eventHour(a, day) ?? -1) - (eventHour(b, day) ?? -1) || (a.scheduledStartTime ?? '').localeCompare(b.scheduledStartTime ?? '') || a.number.localeCompare(b.number))
+          const hours = daily.map(entry => eventHour(entry, day)).filter((hour): hour is number => hour !== null)
+          const firstHour = Math.min(7, ...hours), lastHour = Math.max(19, ...hours)
           const isToday = sameDay(day, today)
           const event = (entry: AgendaEntry) => <EventCard key={entry.id} day={day} entry={entry} go={go} highlighted={entry.id === highlight} />
           return <section key={day.getTime()} className={`agenda-day-section ${isToday ? 'agenda-today' : ''} ${view === 'month' && day.getMonth() !== date.getMonth() ? 'agenda-adjacent' : ''}`} aria-label={day.toLocaleDateString('pt-BR')}>
             {view !== 'day' && <header><button className="link-button agenda-day-heading" onClick={() => selectDay(day)}>{day.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', ...(view === 'week' ? { month: 'short' } : {}) })}{isToday && <span className="agenda-today-label">Hoje</span>}</button></header>}
             {view === 'day' ? <>
               <div className="agenda-unscheduled"><h3>Sem horário</h3>{daily.filter(entry => eventHour(entry, day) === null).map(event)}{!daily.some(entry => eventHour(entry, day) === null) && <p>Nenhum serviço sem horário definido.</p>}</div>
-              <div className="agenda-timeline">{Array.from({ length: 24 }, (_, hour) => <div className="agenda-time-row" key={hour}><time>{String(hour).padStart(2, '0')}:00</time><div>{daily.filter(entry => eventHour(entry, day) === hour).map(event)}</div></div>)}</div>
-            </> : view === 'month' ? <><div className="agenda-compact-list">{daily.slice(0, 3).map(entry => <button id={`agenda-event-${entry.id}-${dateKey(day)}`} className={`agenda-compact secondary ${entry.id === highlight ? 'agenda-highlight' : ''}`} key={entry.id} onClick={() => go(`/ordens-servico/${entry.id}`)} title={`${schedule(entry)} · ${entry.customerLegalNameSnapshot} · ${entry.assignedUserNameSnapshot ?? ''} · ${entry.services.map(service => service.serviceNameSnapshot).join(', ')}`}><strong>{entry.scheduledStartDate === dateKey(day) ? entry.scheduledStartTime?.slice(0, 5) ?? 'Sem horário' : text.continuation} · {entry.number}</strong><span>{entry.customerLegalNameSnapshot}</span><small>{entry.assignedUserNameSnapshot}</small><Badge status={entry.status}/></button>)}</div>{daily.length > 3 && <button className="link-button" onClick={() => selectDay(day)}>+ {daily.length - 3} serviços</button>}</> : daily.length ? daily.map(event) : <p className="agenda-day-empty">{text.emptyDay}</p>}
+              <div className="agenda-timeline">{Array.from({ length: lastHour - firstHour + 1 }, (_, index) => firstHour + index).map(hour => <div className="agenda-time-row" key={hour}><time>{String(hour).padStart(2, '0')}:00</time><div>{daily.filter(entry => eventHour(entry, day) === hour).map(event)}</div></div>)}</div>
+            </> : view === 'month' || view === 'week' ? <><div className="agenda-compact-list">{daily.slice(0, view === 'week' ? 4 : 3).map(entry => <CompactEvent key={entry.id} entry={entry} day={day} go={go} highlighted={entry.id === highlight} />)}</div>{daily.length > (view === 'week' ? 4 : 3) && <button className="link-button" onClick={() => selectDay(day)}>+ {daily.length - (view === 'week' ? 4 : 3)} serviços</button>}{view === 'week' && !daily.length && <p className="agenda-day-empty">—</p>}</> : null}
           </section>
         })}
       </div></div>
     </>}
   </div>
+}
+
+function CompactEvent({ entry, day, go, highlighted }: { entry: AgendaEntry; day: Date; go: Props['go']; highlighted: boolean }) {
+  return <button id={`agenda-event-${entry.id}-${dateKey(day)}`} className={`agenda-compact secondary ${highlighted ? 'agenda-highlight' : ''}`} onClick={() => go(`/ordens-servico/${entry.id}`)} title={`${schedule(entry)} · ${entry.customerLegalNameSnapshot} · ${entry.assignedUserNameSnapshot ?? ''} · ${entry.services.map(service => service.serviceNameSnapshot).join(', ')}`}><strong>{entry.scheduledStartDate === dateKey(day) ? entry.scheduledStartTime?.slice(0, 5) ?? 'Sem horário' : text.continuation} · {entry.number}</strong><span>{entry.customerLegalNameSnapshot}</span><small>{entry.assignedUserNameSnapshot}</small><Badge status={entry.status}/></button>
 }
 
 function EventCard({ entry, day, go, highlighted }: { entry: AgendaEntry; day: Date; go: Props['go']; highlighted: boolean }) {

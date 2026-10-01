@@ -33,6 +33,8 @@
 .agenda-adjacent { background:#f1f5f9 !important; }
 .agenda-compact-list { display:grid; gap:.35rem; }
 .agenda-compact { display:grid; text-align:left; width:100%; padding:.4rem; gap:.2rem; font-size:.75rem; }
+.agenda-week .agenda-compact { padding:.5rem; }
+.agenda-week .agenda-day-empty { margin:0; text-align:center; }
 .agenda-compact span,.agenda-compact small,.agenda-compact strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
 .agenda-highlight { outline:3px solid #2563eb; outline-offset:1px; background:#eff6ff !important; }
 .agenda-confirmation { padding:.8rem; background:#dcfce7; color:#166534; border-radius:.5rem; }

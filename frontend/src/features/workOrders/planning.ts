@@ -2,6 +2,8 @@ import type { Planning } from './types'
 
 export const blankPlanning: Planning = { assignedUserId: '', scheduledStartDate: '', scheduledStartTime: '', scheduledEndDate: '', scheduledEndTime: '', operationalNotes: '' }
 
+export const calendarPlanningChanged = (before: Planning, after: Planning) => (['assignedUserId', 'scheduledStartDate', 'scheduledStartTime', 'scheduledEndDate', 'scheduledEndTime'] as const).some(key => before[key] !== after[key])
+
 export function plannedLabel(date: string | null, time: string | null): string {
   if (!date) return 'Não informado'
   const [year, month, day] = date.split('-')

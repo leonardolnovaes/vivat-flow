@@ -66,7 +66,7 @@ td:first-child { font-weight: 650; color: #1d2d43; } td.cnpj { white-space: nowr
 .quick-customer-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: .25rem 0 1rem; }
 .quick-customer-dialog .checkbox { margin-top: .8rem; }
 @media (max-width: 760px) { .quote-customer-row .quick-customer { margin-top: 0; } .quote-action-panel .actions, .quick-customer-fields { grid-template-columns: 1fr; } }
-td.actions { white-space: nowrap; } .actions button { font-size: .79rem; padding: .45rem .62rem; }
+td.actions { white-space: nowrap; } td.actions button, .mobile-record .actions button { font-size: .79rem; padding: .45rem .62rem; }
 .pagination { display: flex; align-items: center; justify-content: flex-end; gap: .6rem; margin-top: 1rem; color: #526176; font-size: .9rem; }
 .detail-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(15rem, 1fr); gap: 1.25rem; margin-bottom: 1.25rem; }
 .record-summary { display: grid; grid-template-columns: minmax(8rem, 11rem) 1fr; gap: .7rem 1rem; margin: 1rem 0 0; }

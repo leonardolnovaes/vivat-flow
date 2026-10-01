@@ -6,7 +6,15 @@ const source = fs.readFileSync('src/features/workOrders/planning.ts', 'utf8')
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
 const ref = { exports: {} }
 new Function('module', 'exports', compiled)(ref, ref.exports)
-const { blankPlanning, validatePlanning, planningPayload, plannedLabel } = ref.exports
+const { blankPlanning, calendarPlanningChanged, validatePlanning, planningPayload, plannedLabel } = ref.exports
+
+test('only calendar planning changes trigger rescheduling', () => {
+  const before = { ...blankPlanning, assignedUserId: 'worker', scheduledStartDate: '2026-10-01' }
+  assert.equal(calendarPlanningChanged(before, { ...before, operationalNotes: 'Nova observação' }), false)
+  for (const key of ['assignedUserId', 'scheduledStartDate', 'scheduledStartTime', 'scheduledEndDate', 'scheduledEndTime']) {
+    assert.equal(calendarPlanningChanged(before, { ...before, [key]: 'changed' }), true, key)
+  }
+})
 
 test('draft allows incomplete planning and date-only payload preserves absent time/end', () => {
   assert.deepEqual(validatePlanning(blankPlanning), {})

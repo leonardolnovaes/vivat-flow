@@ -102,12 +102,22 @@ test('scheduling deep link opens the day with a highlighted date-only order', as
     assert.equal(calls[0].get('from'), `${day}T00:00:00-03:00`)
     assert.match(document.querySelector('.agenda-confirmation').textContent, /agendada com sucesso/)
     assert.match(document.querySelector('.agenda-unscheduled .agenda-highlight').textContent, /OS-untimed/)
-    assert.equal(document.querySelectorAll('.agenda-time-row').length, 24)
-    assert.match(document.querySelectorAll('.agenda-time-row')[9].textContent, /OS-timed/)
+    assert.equal(document.querySelectorAll('.agenda-time-row').length, 13)
+    assert.match(document.querySelectorAll('.agenda-time-row')[2].textContent, /OS-timed/)
     await click('Semana')
     assert.equal(document.querySelectorAll('.agenda-week .agenda-day-section').length, 7)
     await click('Mês')
     assert.equal(document.querySelectorAll('.agenda-weekdays strong').length, 7)
+  } finally { await act(async () => root.unmount()); dom.window.history.replaceState(null, '', '/') }
+})
+test('rescheduling deep link confirms the updated calendar entry', async () => {
+  const day = dateKey(new Date())
+  dom.window.history.replaceState(null, '', `/agenda?date=${day}&view=day&workOrderId=order-1&confirmation=rescheduled`)
+  response = [{ ...entry(1), scheduledStartDate: day, scheduledEndDate: day }]; fail = false
+  const { root } = await render(['USER'])
+  try {
+    assert.match(document.querySelector('.agenda-confirmation').textContent, /Agendamento atualizado com sucesso/)
+    assert.ok(document.querySelector('.agenda-highlight'))
   } finally { await act(async () => root.unmount()); dom.window.history.replaceState(null, '', '/') }
 })
 test('stale period responses cannot replace the currently visible period', async () => {
@@ -149,6 +159,32 @@ test('month cells mark cross-midnight continuation and exclude the exact-midnigh
     await act(async () => { continuation.click(); await flush() })
     assert.equal(paths.at(-1), '/ordens-servico/order-night')
   } finally { await act(async () => root.unmount()) }
+})
+
+test('week cards show day-relative continuation and limit busy days', async () => {
+  const today = new Date()
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7))
+  const secondDay = new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() + 1)
+  dom.window.history.replaceState(null, '', `/agenda?date=${dateKey(firstDay)}`)
+  response = [
+    { ...entry('night'), scheduledStartDate: dateKey(firstDay), scheduledStartTime: '23:00:00', scheduledEndDate: dateKey(secondDay), scheduledEndTime: '01:00:00' },
+    { ...entry('midnight'), scheduledStartDate: dateKey(firstDay), scheduledStartTime: '23:00:00', scheduledEndDate: dateKey(secondDay), scheduledEndTime: '00:00:00' },
+    ...[1, 2, 3, 4].map(index => ({ ...entry(index), scheduledStartDate: dateKey(firstDay), scheduledEndDate: dateKey(firstDay) })),
+  ]
+  fail = false
+  const { root } = await render(['USER'])
+  try {
+    await click('Semana')
+    const cell = day => [...document.querySelectorAll('.agenda-week .agenda-day-section')].find(section => section.getAttribute('aria-label') === day.toLocaleDateString('pt-BR'))
+    assert.equal(cell(firstDay).querySelectorAll('.agenda-compact').length, 4)
+    assert.match(cell(firstDay).textContent, /\+ 2 serviços/)
+    assert.match(cell(secondDay).textContent, /Continuação · OS-night/)
+    assert.doesNotMatch(cell(secondDay).textContent, /OS-midnight|23:00/)
+    assert.equal([...document.querySelectorAll('.agenda-week .agenda-day-empty')].every(marker => marker.textContent === '—'), true)
+    await act(async () => { cell(firstDay).querySelector('.link-button:last-child').click(); await flush() })
+    assert.equal(document.querySelectorAll('.agenda-day-section').length, 1)
+    assert.equal(document.querySelectorAll('.agenda-time-row').length, 17)
+  } finally { await act(async () => root.unmount()); dom.window.history.replaceState(null, '', '/') }
 })
 
 for (const [view, label, dayCount] of [['day', 'Dia', 1], ['week', 'Semana', 7], ['month', 'Mês', null]]) {
