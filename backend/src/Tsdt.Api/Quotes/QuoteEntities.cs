@@ -51,7 +51,7 @@ public sealed class QuoteApprovalRecipient
     public Guid QuoteId { get; set; }
     public Guid CustomerContactId { get; set; }
     public required string NameSnapshot { get; set; }
-    public required string EmailSnapshot { get; set; }
+    public string? EmailSnapshot { get; set; }
     public string? PhoneSnapshot { get; set; }
     public Quote Quote { get; set; } = null!;
     public CustomerContact Contact { get; set; } = null!;

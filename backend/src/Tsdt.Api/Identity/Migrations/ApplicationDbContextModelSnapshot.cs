@@ -901,7 +901,6 @@ namespace Tsdt.Api.Identity.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("EmailSnapshot")
-                        .IsRequired()
                         .HasMaxLength(254)
                         .HasColumnType("character varying(254)");
 

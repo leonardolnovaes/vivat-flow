@@ -68,6 +68,7 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
   const [loadingQuote, setLoadingQuote] = useState(Boolean(id))
   const [stale, setStale] = useState(false)
   const summary = useRef<HTMLDivElement>(null)
+  const quoteLoadGeneration = useRef(0)
 
   const loadUnits = async (customerId: string) => {
     setUnitsLoaded(false)
@@ -96,12 +97,15 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
 
   const reloadQuote = useCallback(async () => {
     if (!id) return
+    const generation = ++quoteLoadGeneration.current
     setLoadingQuote(true)
     setVersion('')
     try {
       const quote = await getQuote(id)
+      if (generation !== quoteLoadGeneration.current) return
       if (quote.status !== 'Draft') { go(`/orcamentos/${id}`, true); return }
       const customer = await getCustomer(quote.customerId)
+      if (generation !== quoteLoadGeneration.current) return
       const state = editState(quote)
       setSelectedCustomer(customer)
       setForm(state.form)
@@ -112,8 +116,8 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
       setErrors({})
       setStale(false)
       setNotice('')
-    } catch (error) { setNotice(message(error, onSessionExpired, 'Não foi possível carregar o formulário.')) }
-    finally { setLoadingQuote(false) }
+    } catch (error) { if (generation === quoteLoadGeneration.current) setNotice(message(error, onSessionExpired, 'Não foi possível carregar o formulário.')) }
+    finally { if (generation === quoteLoadGeneration.current) setLoadingQuote(false) }
   }, [id, onSessionExpired, go])
   useEffect(() => { if (id) void Promise.resolve().then(reloadQuote) }, [id, reloadQuote])
 
