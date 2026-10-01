@@ -212,8 +212,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(item => item.CreatedByUserId).IsRequired(); entity.Property(item => item.UpdatedByUserId).IsRequired();
             entity.Property(item => item.Version).IsConcurrencyToken();
             entity.HasIndex(item => new { item.OrganizationId, item.Number }).IsUnique();
-            entity.HasIndex(item => new { item.OrganizationId, item.QuoteId }).IsUnique().HasFilter("\"Status\" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')");
-            entity.HasIndex(item => new { item.OrganizationId, item.ContractId }).HasFilter("\"ContractId\" IS NOT NULL");
+            entity.HasIndex(item => new { item.OrganizationId, item.QuoteId });
+            entity.HasIndex(item => new { item.OrganizationId, item.ContractId }).IsUnique().HasFilter("\"ContractId\" IS NOT NULL AND \"Status\" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')");
             entity.HasIndex(item => new { item.OrganizationId, item.Status, item.UpdatedAtUtc });
             entity.HasIndex(item => new { item.OrganizationId, item.AssignedUserId, item.UpdatedAtUtc });
             entity.HasIndex(item => new { item.OrganizationId, item.UpdatedAtUtc, item.Id });
