@@ -14,6 +14,7 @@ const text = {
   views: { day: 'Dia', week: 'Semana', month: 'Mês' },
   emptyDay: 'Nenhum serviço agendado para este dia.', filteredDay: 'Nenhum serviço agendado para este profissional neste dia.',
   emptyPeriod: 'Nenhum serviço agendado neste período.', filteredPeriod: 'Nenhum serviço agendado para este profissional neste período.',
+  continuation: 'Continuação',
 }
 const time = (value: string) => new Date(value).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 const schedule = (entry: AgendaEntry) => {
@@ -69,13 +70,13 @@ export function Agenda({ user, go, onSessionExpired }: Props) {
     </section>
     {error ? <section className="card error-panel" role="alert"><p>{error}</p><button className="secondary" onClick={() => void load()}>Tentar novamente</button></section> : entries === null ? <LoadingState /> : <>
       {!entries.length && <section className="card empty-state" role="status"><h3>{view === 'day' ? assignee ? text.filteredDay : text.emptyDay : assignee ? text.filteredPeriod : text.emptyPeriod}</h3><p>Use os controles para consultar outras datas.</p></section>}
-      {(entries.length > 0 || view !== 'day') && <div className={`agenda-${view}`}>
+      {entries.length > 0 && <div className={`agenda-${view}`}>
         {period.days.map(day => {
           const daily = entries.filter(entry => overlapsDay(entry.scheduledStart, entry.scheduledEnd, day))
           const isToday = sameDay(day, today)
           return <section key={day.getTime()} className={`agenda-day-section ${isToday ? 'agenda-today' : ''} ${view === 'month' && day.getMonth() !== date.getMonth() ? 'agenda-adjacent' : ''}`} aria-label={day.toLocaleDateString('pt-BR')}>
             {view !== 'day' && <header><button className="link-button agenda-day-heading" onClick={() => selectDay(day)}>{day.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', ...(view === 'week' ? { month: 'short' } : {}) })}{isToday && <span className="agenda-today-label">Hoje</span>}</button></header>}
-            {view === 'month' ? <><div className="agenda-compact-list">{daily.slice(0, 3).map(entry => <button className="agenda-compact secondary" key={entry.id} onClick={() => go(`/ordens-servico/${entry.id}`)} title={`${schedule(entry)} · ${entry.customerLegalNameSnapshot} · ${entry.assignedUserNameSnapshot ?? ''}`}><strong>{time(entry.scheduledStart)} · {entry.number}</strong><span>{entry.customerLegalNameSnapshot}</span><small>{entry.assignedUserNameSnapshot}</small></button>)}</div>{daily.length > 3 && <button className="link-button" onClick={() => selectDay(day)}>+ {daily.length - 3} serviços</button>}</> : daily.length ? daily.map(entry => <EventCard key={entry.id} entry={entry} go={go} />) : <p className="agenda-day-empty">{text.emptyDay}</p>}
+            {view === 'month' ? <><div className="agenda-compact-list">{daily.slice(0, 3).map(entry => <button className="agenda-compact secondary" key={entry.id} onClick={() => go(`/ordens-servico/${entry.id}`)} title={`${schedule(entry)} · ${entry.customerLegalNameSnapshot} · ${entry.assignedUserNameSnapshot ?? ''}`}><strong>{sameDay(new Date(entry.scheduledStart), day) ? time(entry.scheduledStart) : text.continuation} · {entry.number}</strong><span>{entry.customerLegalNameSnapshot}</span><small>{entry.assignedUserNameSnapshot}</small></button>)}</div>{daily.length > 3 && <button className="link-button" onClick={() => selectDay(day)}>+ {daily.length - 3} serviços</button>}</> : daily.length ? daily.map(entry => <EventCard key={entry.id} entry={entry} go={go} />) : <p className="agenda-day-empty">{text.emptyDay}</p>}
           </section>
         })}
       </div>}

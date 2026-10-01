@@ -102,3 +102,63 @@ test('stale period responses cannot replace the currently visible period', async
     assert.match(document.body.textContent, /Nenhum serviço agendado/)
   } finally { await act(async () => root.unmount()) }
 })
+
+test('month cells mark cross-midnight continuation and exclude the exact-midnight end day', async () => {
+  const now = new Date()
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+  const secondDay = new Date(now.getFullYear(), now.getMonth(), 2)
+  const thirdDay = new Date(now.getFullYear(), now.getMonth(), 3)
+  const start = new Date(now.getFullYear(), now.getMonth(), 1, 23).toISOString()
+  response = [
+    { ...entry('night'), scheduledStart: start, scheduledEnd: new Date(now.getFullYear(), now.getMonth(), 2, 1).toISOString() },
+    { ...entry('midnight'), scheduledStart: start, scheduledEnd: secondDay.toISOString() },
+  ]
+  fail = false
+  const { root, paths } = await render(['USER'])
+  try {
+    await click('Mês')
+    const cell = day => [...document.querySelectorAll('.agenda-month .agenda-day-section')]
+      .find(section => section.getAttribute('aria-label') === day.toLocaleDateString('pt-BR'))
+    assert.match(cell(firstDay).textContent, /23:00 · OS-night/)
+    assert.match(cell(firstDay).textContent, /23:00 · OS-midnight/)
+    assert.match(cell(secondDay).textContent, /Continuação · OS-night/)
+    assert.doesNotMatch(cell(secondDay).textContent, /23:00|OS-midnight/)
+    assert.doesNotMatch(cell(thirdDay).textContent, /OS-night|OS-midnight/)
+    const continuation = cell(secondDay).querySelector('.agenda-compact')
+    assert.match(continuation.title, /23:00/)
+    assert.match(continuation.title, /01:00/)
+    await act(async () => { continuation.click(); await flush() })
+    assert.equal(paths.at(-1), '/ordens-servico/order-night')
+  } finally { await act(async () => root.unmount()) }
+})
+
+for (const [view, label, dayCount] of [['day', 'Dia', 1], ['week', 'Semana', 7], ['month', 'Mês', null]]) {
+  test(`empty ${view} renders one empty state and navigation restores the populated grid`, async () => {
+    response = []; fail = false
+    const { root } = await render(['USER'])
+    try {
+      await click(label)
+      assert.equal(document.querySelectorAll('.empty-state').length, 1)
+      assert.equal(document.querySelectorAll('.agenda-day, .agenda-week, .agenda-month, .agenda-day-section, .agenda-day-empty').length, 0)
+      assert.match(document.querySelector('.empty-state').textContent, view === 'day' ? /Nenhum serviço agendado para este dia/ : /Nenhum serviço agendado neste período/)
+      const previousFrom = calls.at(-1).get('from')
+      response = () => {
+        const from = new Date(calls.at(-1).get('from'))
+        const start = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 9)
+        const end = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 11)
+        return [{ ...entry('restored'), scheduledStart: start.toISOString(), scheduledEnd: end.toISOString() }]
+      }
+      await click('Próximo período')
+      assert.ok(new Date(calls.at(-1).get('from')) > new Date(previousFrom))
+      assert.equal(document.querySelectorAll('.empty-state').length, 0)
+      assert.ok(document.querySelector(`.agenda-${view}`))
+      const count = document.querySelectorAll('.agenda-day-section').length
+      if (dayCount !== null) assert.equal(count, dayCount)
+      else { assert.ok(count >= 28 && count <= 42); assert.equal(count % 7, 0) }
+      assert.match(document.body.textContent, /OS-restored/)
+      response = []; await click('Período anterior')
+      assert.equal(document.querySelectorAll('.empty-state').length, 1)
+      assert.equal(document.querySelectorAll('.agenda-day-section').length, 0)
+    } finally { await act(async () => root.unmount()) }
+  })
+}
