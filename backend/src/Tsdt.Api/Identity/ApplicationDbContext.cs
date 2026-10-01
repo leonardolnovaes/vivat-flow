@@ -169,6 +169,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(contract => contract.CustomerLegalNameSnapshot).IsRequired().HasMaxLength(200);
             entity.Property(contract => contract.ApprovedTotalAmount).HasPrecision(18, 2);
             entity.Property(contract => contract.Status).HasConversion<string>().HasMaxLength(16);
+            entity.Property(contract => contract.Type).HasConversion<string>().HasMaxLength(16);
             entity.Property(contract => contract.PaymentType).HasConversion<string>().HasMaxLength(16);
             entity.Property(contract => contract.PaymentTerms).HasMaxLength(2000);
             entity.Property(contract => contract.Notes).HasMaxLength(2000);
