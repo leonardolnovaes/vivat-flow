@@ -6,7 +6,7 @@ const source = fs.readFileSync('src/features/agenda/agendaDates.ts', 'utf8')
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
 const moduleRef = { exports: {} }
 new Function('module', 'exports', compiled)(moduleRef, moduleRef.exports)
-const { visiblePeriod, movePeriod, overlapsDay, sameDay, periodLabel } = moduleRef.exports
+const { visiblePeriod, movePeriod, overlapsDay, sameDay, periodLabel, saoPauloDayStartUtc } = moduleRef.exports
 const { scheduledOnDay, eventHour } = moduleRef.exports
 
 test('date-only schedules include their end day without inventing a time', () => {
@@ -70,4 +70,10 @@ test('local boundaries survive daylight-saving transitions', () => {
     assert.equal(spring.from.getHours(), 0)
     assert.equal(spring.to.getHours(), 0)
   } finally { if (original === undefined) delete process.env.TZ; else process.env.TZ = original }
+})
+test('São Paulo query boundaries use historical daylight-saving offsets', () => {
+  assert.equal(saoPauloDayStartUtc(new Date(2018, 0, 15)), '2018-01-15T02:00:00.000Z')
+  assert.equal(saoPauloDayStartUtc(new Date(2018, 6, 15)), '2018-07-15T03:00:00.000Z')
+  assert.equal(saoPauloDayStartUtc(new Date(2018, 10, 4)), '2018-11-04T03:00:00.000Z')
+  assert.equal(saoPauloDayStartUtc(new Date(2018, 10, 5)), '2018-11-05T02:00:00.000Z')
 })

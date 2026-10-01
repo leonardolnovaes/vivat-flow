@@ -5,7 +5,7 @@ import { LoadingState } from '../../components/LoadingState'
 import { Badge } from '../workOrders/WorkOrderStatusBadge'
 import { getAgenda, getEligibleAssignees } from '../workOrders/workOrderApi'
 import type { AgendaEntry, EligibleAssignee } from '../workOrders/types'
-import { dateKey, eventHour, movePeriod, periodLabel, sameDay, scheduledOnDay, visiblePeriod } from './agendaDates'
+import { dateKey, eventHour, movePeriod, periodLabel, sameDay, saoPauloDayStartUtc, scheduledOnDay, visiblePeriod } from './agendaDates'
 import type { AgendaView } from './agendaDates'
 import './agenda.css'
 
@@ -47,7 +47,7 @@ export function Agenda({ user, go, onSessionExpired }: Props) {
   const load = useCallback(async () => {
     const current = ++sequence.current
     setEntries(null); setError('')
-    const query = new URLSearchParams({ from: `${dateKey(period.from)}T00:00:00-03:00`, to: `${dateKey(period.to)}T00:00:00-03:00` })
+    const query = new URLSearchParams({ from: saoPauloDayStartUtc(period.from), to: saoPauloDayStartUtc(period.to) })
     if (management && assignee) query.set('assignedUserId', assignee)
     try { const result = await getAgenda(query); if (current === sequence.current) setEntries(result) }
     catch (caught) {
@@ -85,7 +85,7 @@ export function Agenda({ user, go, onSessionExpired }: Props) {
     {error ? <section className="card error-panel" role="alert"><p>{error}</p><button className="secondary" onClick={() => void load()}>Tentar novamente</button></section> : entries === null ? <LoadingState /> : <>
       {!entries.length && <section className="card empty-state" role="status"><h3>{view === 'day' ? assignee ? text.filteredDay : text.emptyDay : assignee ? text.filteredPeriod : text.emptyPeriod}</h3><p>Use os controles para consultar outras datas.</p></section>}
       {highlight && entries.some(entry => entry.id === highlight) && <p className="agenda-confirmation" role="status">{confirmation === 'rescheduled' ? 'Agendamento atualizado com sucesso.' : 'OS agendada com sucesso.'} O serviço está destacado abaixo.</p>}
-      <div className="agenda-calendar-scroll">
+      {entries.length > 0 && <div className="agenda-calendar-scroll">
       {view === 'month' && <div className="agenda-weekdays" aria-hidden="true">{weekdays.map(label => <strong key={label}>{label}</strong>)}</div>}
       <div className={`agenda-${view}`}>
         {period.days.map(day => {
@@ -102,7 +102,7 @@ export function Agenda({ user, go, onSessionExpired }: Props) {
             </> : view === 'month' || view === 'week' ? <><div className="agenda-compact-list">{daily.slice(0, view === 'week' ? 4 : 3).map(entry => <CompactEvent key={entry.id} entry={entry} day={day} go={go} highlighted={entry.id === highlight} />)}</div>{daily.length > (view === 'week' ? 4 : 3) && <button className="link-button" onClick={() => selectDay(day)}>+ {daily.length - (view === 'week' ? 4 : 3)} serviços</button>}{view === 'week' && !daily.length && <p className="agenda-day-empty">—</p>}</> : null}
           </section>
         })}
-      </div></div>
+      </div></div>}
     </>}
   </div>
 }

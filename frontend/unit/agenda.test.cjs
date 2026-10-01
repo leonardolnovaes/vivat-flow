@@ -33,6 +33,7 @@ Module._load = function (name, parent, isMain) {
   return originalLoad.call(this, name, parent, isMain)
 }
 const { Agenda } = require('../src/features/agenda/Agenda.tsx')
+const { saoPauloDayStartUtc } = require('../src/features/agenda/agendaDates.ts')
 Module._load = originalLoad
 const flush = () => new Promise(resolve => setImmediate(resolve))
 async function render(roles) {
@@ -99,7 +100,7 @@ test('scheduling deep link opens the day with a highlighted date-only order', as
   fail = false
   const { root } = await render(['MANAGER'])
   try {
-    assert.equal(calls[0].get('from'), `${day}T00:00:00-03:00`)
+    assert.equal(calls[0].get('from'), saoPauloDayStartUtc(new Date(`${day}T12:00:00`)))
     assert.match(document.querySelector('.agenda-confirmation').textContent, /agendada com sucesso/)
     assert.match(document.querySelector('.agenda-unscheduled .agenda-highlight').textContent, /OS-untimed/)
     assert.equal(document.querySelectorAll('.agenda-time-row').length, 13)
@@ -118,6 +119,16 @@ test('rescheduling deep link confirms the updated calendar entry', async () => {
   try {
     assert.match(document.querySelector('.agenda-confirmation').textContent, /Agendamento atualizado com sucesso/)
     assert.ok(document.querySelector('.agenda-highlight'))
+  } finally { await act(async () => root.unmount()); dom.window.history.replaceState(null, '', '/') }
+})
+test('historical daylight-saving day queries use São Paulo boundaries', async () => {
+  dom.window.history.replaceState(null, '', '/agenda?date=2018-01-15&view=day')
+  response = []; fail = false
+  const { root } = await render(['USER'])
+  try {
+    assert.equal(calls[0].get('from'), '2018-01-15T02:00:00.000Z')
+    assert.equal(calls[0].get('to'), '2018-01-16T02:00:00.000Z')
+    assert.equal(document.querySelector('.agenda-calendar-scroll'), null)
   } finally { await act(async () => root.unmount()); dom.window.history.replaceState(null, '', '/') }
 })
 test('stale period responses cannot replace the currently visible period', async () => {
@@ -188,13 +199,14 @@ test('week cards show day-relative continuation and limit busy days', async () =
 })
 
 for (const [view, label, dayCount] of [['day', 'Dia', 1], ['week', 'Semana', 7], ['month', 'Mês', null]]) {
-  test(`empty ${view} keeps calendar structure when empty and navigation restores events`, async () => {
+  test(`empty ${view} shows one compact state and navigation restores events`, async () => {
     response = []; fail = false
     const { root } = await render(['USER'])
     try {
       await click(label)
       assert.equal(document.querySelectorAll('.empty-state').length, 1)
-      assert.ok(document.querySelector(`.agenda-${view}`))
+      assert.equal(document.querySelector(`.agenda-${view}`), null)
+      assert.equal(document.querySelector('.agenda-calendar-scroll'), null)
       assert.match(document.querySelector('.empty-state').textContent, view === 'day' ? /Nenhum serviço agendado para este dia/ : /Nenhum serviço agendado neste período/)
       const previousFrom = calls.at(-1).get('from')
       response = () => {
@@ -213,7 +225,7 @@ for (const [view, label, dayCount] of [['day', 'Dia', 1], ['week', 'Semana', 7],
       assert.match(document.body.textContent, /OS-restored/)
       response = []; await click('Período anterior')
       assert.equal(document.querySelectorAll('.empty-state').length, 1)
-      assert.ok(document.querySelectorAll('.agenda-day-section').length > 0)
+      assert.equal(document.querySelectorAll('.agenda-day-section').length, 0)
     } finally { await act(async () => root.unmount()) }
   })
 }
