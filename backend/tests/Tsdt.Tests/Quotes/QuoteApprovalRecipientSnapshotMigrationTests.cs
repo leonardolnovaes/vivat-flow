@@ -28,6 +28,18 @@ public sealed class QuoteApprovalRecipientSnapshotMigrationTests
         Assert.DoesNotContain(builder.Operations.OfType<AlterColumnOperation>(), operation => operation.Table == "QuoteApprovalRecipients" && operation.Name == "EmailSnapshot" && !operation.IsNullable);
     }
 
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Migration_enforces_one_unfinished_work_order_per_contract()
+    {
+        var builder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        new MigrationProbe().Run(builder);
+
+        var index = Assert.Single(builder.Operations.OfType<CreateIndexOperation>(), operation => operation.Table == "WorkOrders" && operation.Name == "IX_WorkOrders_OrganizationId_ContractId");
+        Assert.True(index.IsUnique);
+        Assert.Equal("\"ContractId\" IS NOT NULL AND \"Status\" IN ('Draft', 'Scheduled', 'InProgress', 'AwaitingClosure')", index.Filter);
+    }
+
     private sealed class MigrationProbe : PostMergeReviewHardening
     {
         public void Run(MigrationBuilder builder) => Up(builder);
