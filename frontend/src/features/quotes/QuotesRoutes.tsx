@@ -100,6 +100,7 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
     setVersion('')
     try {
       const quote = await getQuote(id)
+      if (quote.status !== 'Draft') { go(`/orcamentos/${id}`, true); return }
       const customer = await getCustomer(quote.customerId)
       const state = editState(quote)
       setSelectedCustomer(customer)
@@ -113,7 +114,7 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
       setNotice('')
     } catch (error) { setNotice(message(error, onSessionExpired, 'Não foi possível carregar o formulário.')) }
     finally { setLoadingQuote(false) }
-  }, [id, onSessionExpired])
+  }, [id, onSessionExpired, go])
   useEffect(() => { if (id) void Promise.resolve().then(reloadQuote) }, [id, reloadQuote])
 
   const choose = async (customer: CustomerSummary, unitId = '') => {
