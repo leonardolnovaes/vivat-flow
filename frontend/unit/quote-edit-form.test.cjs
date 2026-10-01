@@ -44,14 +44,16 @@ let serverQuote = quote('version-1', [item('item-1', 'service-1')])
 let releasePut
 let getCount = 0
 const puts = []
+const quoteLoads = []
 const originalLoad = Module._load
 Module._load = function (name, parent, isMain) {
   if (name === '../../api' && parent?.filename.replaceAll('\\', '/').includes('/features/quotes/')) {
     return { ApiError, request: async (path, init) => {
       if (path === '/api/quotes/professionals') return { ok: true, json: async () => [] }
-      if (path === '/api/quotes/quote-id' && !init?.method) {
+      if (path.startsWith('/api/quotes/') && !init?.method) {
         getCount++
-        return { ok: true, json: async () => serverQuote }
+        const loaded = quoteLoads.shift() ?? Promise.resolve(serverQuote)
+        return { ok: true, json: async () => await loaded }
       }
       if (path === '/api/quotes/quote-id' && init.method === 'PUT') {
         const body = JSON.parse(init.body)
@@ -71,6 +73,7 @@ Module._load = function (name, parent, isMain) {
     return { normalizeBrlAmount: value => value.trim() || null }
   }
   if (name === './QuoteCommercialViews') return { QuoteDetailView: () => null, QuoteWorkspace: () => null }
+  if (name === './QuickCustomerDialog') return { QuickCustomerDialog: () => null }
   if (name === '../../components/LoadingState') return { LoadingState: () => null }
   if (name === '../customers/customerApi') return {
     getCustomer: async () => ({ id: 'customer-id', legalName: 'Cliente', cnpj: '04252011000110', units: [] }),
@@ -160,5 +163,20 @@ test('a Quote that is no longer Draft leaves the edit route instead of entering 
 
   assert.deepEqual(navigation, ['/orcamentos/quote-id'])
   assert.equal(puts.length, 0)
+  await act(async () => root.unmount())
+})
+
+test('an obsolete non-Draft response cannot redirect after navigation to another quote edit route', async () => {
+  let resolveOlder
+  quoteLoads.push(new Promise(resolve => { resolveOlder = resolve }), Promise.resolve({ ...quote('version-new', [item('item-new', 'service-1')]), id: 'quote-new' }))
+  const { root, navigation, props } = await render()
+
+  await act(async () => {
+    root.render(React.createElement(QuoteEditForm, { ...props, id: 'quote-new', path: '/orcamentos/quote-new/editar' }))
+    await flush()
+  })
+  await act(async () => { resolveOlder(quote('version-old', [item('item-old', 'service-1')], 'AwaitingApproval')); await flush() })
+
+  assert.deepEqual(navigation, [])
   await act(async () => root.unmount())
 })

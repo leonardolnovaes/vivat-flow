@@ -167,7 +167,7 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
     {notice && <p className="notice" role="status">{notice}</p>}
     {stale && <div className="error-panel" role="alert"><p>Este orçamento foi alterado. Carregue os dados mais recentes antes de salvar. As alterações não salvas serão substituídas.</p><button type="button" className="secondary" disabled={loadingQuote} onClick={() => void reloadQuote()}>{loadingQuote ? 'Carregando...' : 'Carregar dados recentes'}</button></div>}
     {Object.keys(errors).length > 0 && <ValidationSummary errors={errors} reference={summary} title="Corrija os seguintes campos:" />}
-    <form className="quote-edit-form" onSubmit={save}>
+    <form className="quote-edit-form" inert={pending || stale} onSubmit={save}>
       <section className="quote-form-grid" aria-label="Dados do orçamento">
         <div className="quote-customer-row"><Field label="Cliente *" error={errors.customerId}><CustomerSearch query={query} setQuery={setQuery} results={customerResults} selected={selectedCustomer} choose={choose} clear={clearCustomer} /></Field><button type="button" className="secondary quick-customer" onClick={() => { setCompletingCustomer(false); setQuick(true) }}>+ Cadastrar cliente rapidamente</button></div>
         <Field label="Responsável pelo orçamento" error={errors.responsibleUserId}><select value={form.responsibleUserId} onChange={event => setForm(current => ({ ...current, responsibleUserId: event.target.value }))}><option value="">Não definido</option>{professionals.map(person => <option key={person.id} value={person.id}>{person.fullName} · {person.email}</option>)}</select></Field>
@@ -185,6 +185,8 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
     {quick && <QuickCustomerDialog customerId={completingCustomer ? form.customerId : undefined} close={() => setQuick(false)} saved={(customer, unitId) => { void choose(customer, unitId); setQuick(false); setNotice('Dados do cliente salvos com sucesso.') }} />}
   </section>
 }
+
+export { Form as QuoteEditForm }
 
 function CustomerSearch({ query, setQuery, results, selected, choose, clear }: { query: string; setQuery: (value: string) => void; results: CustomerSummary[]; selected: CustomerSummary | null; choose: (customer: CustomerSummary) => void; clear: () => void }) {
   const [editing, setEditing] = useState(false)
