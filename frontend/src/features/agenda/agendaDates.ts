@@ -26,6 +26,21 @@ export function overlapsDay(start: string, end: string, day: Date): boolean {
 export function sameDay(left: Date, right: Date): boolean {
   return startOfDay(left).getTime() === startOfDay(right).getTime()
 }
+export function dateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+export type CalendarSchedule = { scheduledStartDate: string; scheduledStartTime: string | null; scheduledEndDate: string | null; scheduledEndTime: string | null }
+export function scheduledOnDay(entry: CalendarSchedule, day: Date): boolean {
+  const key = dateKey(day)
+  const end = entry.scheduledEndDate ?? entry.scheduledStartDate
+  return entry.scheduledStartDate <= key && (end > key || (end === key && (!entry.scheduledEndTime || entry.scheduledEndTime !== '00:00:00')))
+}
+
+export function eventHour(entry: CalendarSchedule, day: Date): number | null {
+  if (!entry.scheduledStartTime) return null
+  return entry.scheduledStartDate < dateKey(day) ? 0 : Number(entry.scheduledStartTime.slice(0, 2))
+}
 export function periodLabel(date: Date, view: AgendaView): string {
   const format = (value: Date) => value.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
   if (view === 'day') return format(date)

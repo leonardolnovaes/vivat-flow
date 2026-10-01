@@ -8,10 +8,10 @@ public sealed class WorkOrderCreationRulesTests
 {
     [Fact]
     [Trait("Category", "Unit")]
-    public void Active_contract_allows_successive_closed_work_orders()
+    public void Active_contract_allows_successive_completed_work_orders()
     {
         Assert.True(WorkOrderRules.CanCreateFromContract(ContractStatus.Active, []));
-        Assert.True(WorkOrderRules.CanCreateFromContract(ContractStatus.Active, [WorkOrderStatus.Closed, WorkOrderStatus.Cancelled]));
+        Assert.True(WorkOrderRules.CanCreateFromContract(ContractStatus.Active, [WorkOrderStatus.Completed, WorkOrderStatus.Cancelled]));
     }
 
     [Theory]
@@ -19,9 +19,8 @@ public sealed class WorkOrderCreationRulesTests
     [InlineData(WorkOrderStatus.Draft)]
     [InlineData(WorkOrderStatus.Scheduled)]
     [InlineData(WorkOrderStatus.InProgress)]
-    [InlineData(WorkOrderStatus.AwaitingClosure)]
     public void Unfinished_work_order_blocks_another_for_same_scope(WorkOrderStatus status)
-        => Assert.False(WorkOrderRules.CanCreateFromContract(ContractStatus.Active, [WorkOrderStatus.Closed, status]));
+        => Assert.False(WorkOrderRules.CanCreateFromContract(ContractStatus.Active, [WorkOrderStatus.Completed, status]));
 
     [Fact]
     [Trait("Category", "Unit")]

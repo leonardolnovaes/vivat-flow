@@ -78,7 +78,7 @@ public sealed class WorkOrderApiTests
     }
 
     [Fact, Trait("Category", "Integration")]
-    public async Task Assigned_user_can_execute_only_own_work_and_management_closes()
+    public async Task Assigned_user_can_execute_only_own_work_and_completion_is_terminal()
     {
         using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
         var quote = await SeedQuoteAsync(factory);
@@ -86,26 +86,25 @@ public sealed class WorkOrderApiTests
         var user = await CreateUserAsync(factory, quote.OrganizationId, IdentityRoles.User, "worker@test");
         var other = await CreateUserAsync(factory, quote.OrganizationId, IdentityRoles.User, "other@test");
         var start = DateTimeOffset.UtcNow.AddDays(1); var end = start.AddHours(2);
-        var order = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Post, "/api/work-orders/from-contract", new CreateWorkOrderRequest(activeContract.Id, user.Id, start, end, "Prepare site"));
+        var order = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Post, "/api/work-orders/from-contract", new CreateWorkOrderRequest(activeContract.Id, user.Id, DateOnly.FromDateTime(start.DateTime), DateOnly.FromDateTime(end.DateTime), "Prepare site", TimeOnly.FromDateTime(start.DateTime), TimeOnly.FromDateTime(end.DateTime)));
         Assert.Equal(HttpStatusCode.Conflict, (await Post(admin, $"/api/work-orders/{order.Id}/schedule", new WorkOrderVersionRequest(Guid.NewGuid()))).StatusCode);
         var scheduled = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Post, $"/api/work-orders/{order.Id}/schedule", new WorkOrderVersionRequest(order.Version));
         using var worker = IdentityTestClient.Create(factory); await IdentityTestClient.LoginAsync(worker, user.Email!, "Userpass1!Password");
         using var stranger = IdentityTestClient.Create(factory); await IdentityTestClient.LoginAsync(stranger, other.Email!, "Userpass1!Password");
         Assert.Equal(HttpStatusCode.NotFound, (await stranger.GetAsync($"/api/work-orders/{order.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await stranger.GetAsync($"/api/work-orders/{order.Id}/history")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await Post(worker, $"/api/work-orders/{order.Id}/close", new WorkOrderVersionRequest(scheduled.Version))).StatusCode);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, (await Post(worker, $"/api/work-orders/{order.Id}/close", new WorkOrderVersionRequest(scheduled.Version))).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await Post(worker, $"/api/work-orders/{order.Id}/cancel", new WorkOrderVersionRequest(scheduled.Version))).StatusCode);
         var list = await worker.GetFromJsonAsync<WorkOrderListResponse>("/api/work-orders?assignedUserId=someone-else", Json);
         Assert.Equal(order.Id, Assert.Single(list!.Items).Id);
         var started = await Send<WorkOrderDetailResponse>(worker, HttpMethod.Post, $"/api/work-orders/{order.Id}/start", new WorkOrderVersionRequest(scheduled.Version));
         var completed = await Send<WorkOrderDetailResponse>(worker, HttpMethod.Post, $"/api/work-orders/{order.Id}/complete", new CompleteWorkOrderRequest(started.Version, "Done"));
-        Assert.Equal(WorkOrderStatus.AwaitingClosure, completed.Status);
+        Assert.Equal(WorkOrderStatus.Completed, completed.Status);
         Assert.NotNull(completed.ExecutionCompletedAtUtc);
         var history = await worker.GetFromJsonAsync<List<WorkOrderAuditResponse>>($"/api/work-orders/{order.Id}/history", Json);
         Assert.Contains(history!, item => item.Action == "WORK_ORDER_EXECUTION_COMPLETED");
-        var closed = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Post, $"/api/work-orders/{order.Id}/close", new WorkOrderVersionRequest(completed.Version));
-        Assert.Equal(WorkOrderStatus.Closed, closed.Status);
-        Assert.Equal(HttpStatusCode.Conflict, (await Post(admin, $"/api/work-orders/{order.Id}/cancel", new WorkOrderVersionRequest(closed.Version))).StatusCode);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, (await Post(admin, $"/api/work-orders/{order.Id}/close", new WorkOrderVersionRequest(completed.Version))).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Post(admin, $"/api/work-orders/{order.Id}/cancel", new WorkOrderVersionRequest(completed.Version))).StatusCode);
     }
 
     [Fact, Trait("Category", "Integration")]
@@ -123,12 +122,12 @@ public sealed class WorkOrderApiTests
         var order = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Post, "/api/work-orders/from-contract", new CreateWorkOrderRequest(activeContract.Id, null, null, null, null));
         Assert.Equal(HttpStatusCode.BadRequest, (await Post(admin, $"/api/work-orders/{order.Id}/schedule", new WorkOrderVersionRequest(order.Version))).StatusCode);
         var start = DateTimeOffset.UtcNow.AddDays(1);
-        Assert.Equal(HttpStatusCode.BadRequest, (await SendResponse(admin, HttpMethod.Put, $"/api/work-orders/{order.Id}/planning", new UpdateWorkOrderPlanningRequest(null, start, start, null, order.Version))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendResponse(admin, HttpMethod.Put, $"/api/work-orders/{order.Id}/planning", new UpdateWorkOrderPlanningRequest(null, DateOnly.FromDateTime(start.DateTime), DateOnly.FromDateTime(start.DateTime), null, order.Version, TimeOnly.FromDateTime(start.DateTime), TimeOnly.FromDateTime(start.DateTime)))).StatusCode);
         var worker = await CreateUserAsync(factory, quote.OrganizationId, IdentityRoles.User, "planning-worker@test");
-        var planned = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Put, $"/api/work-orders/{order.Id}/planning", new UpdateWorkOrderPlanningRequest(worker.Id, start, start.AddHours(1), "Plan", order.Version));
-        Assert.Equal(HttpStatusCode.Conflict, (await SendResponse(admin, HttpMethod.Put, $"/api/work-orders/{order.Id}/planning", new UpdateWorkOrderPlanningRequest(worker.Id, start, start.AddHours(1), "Old", order.Version))).StatusCode);
+        var planned = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Put, $"/api/work-orders/{order.Id}/planning", new UpdateWorkOrderPlanningRequest(worker.Id, DateOnly.FromDateTime(start.DateTime), DateOnly.FromDateTime(start.AddHours(1).DateTime), "Plan", order.Version, TimeOnly.FromDateTime(start.DateTime), TimeOnly.FromDateTime(start.AddHours(1).DateTime)));
+        Assert.Equal(HttpStatusCode.Conflict, (await SendResponse(admin, HttpMethod.Put, $"/api/work-orders/{order.Id}/planning", new UpdateWorkOrderPlanningRequest(worker.Id, DateOnly.FromDateTime(start.DateTime), DateOnly.FromDateTime(start.AddHours(1).DateTime), "Old", order.Version, TimeOnly.FromDateTime(start.DateTime), TimeOnly.FromDateTime(start.AddHours(1).DateTime)))).StatusCode);
         var scheduled = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Post, $"/api/work-orders/{order.Id}/schedule", new WorkOrderVersionRequest(planned.Version));
-        Assert.Equal(HttpStatusCode.BadRequest, (await SendResponse(admin, HttpMethod.Put, $"/api/work-orders/{order.Id}/planning", new UpdateWorkOrderPlanningRequest(null, start, start.AddHours(1), null, scheduled.Version))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendResponse(admin, HttpMethod.Put, $"/api/work-orders/{order.Id}/planning", new UpdateWorkOrderPlanningRequest(null, DateOnly.FromDateTime(start.DateTime), DateOnly.FromDateTime(start.AddHours(1).DateTime), null, scheduled.Version, TimeOnly.FromDateTime(start.DateTime), TimeOnly.FromDateTime(start.AddHours(1).DateTime)))).StatusCode);
     }
 
     [Fact, Trait("Category", "Integration")]

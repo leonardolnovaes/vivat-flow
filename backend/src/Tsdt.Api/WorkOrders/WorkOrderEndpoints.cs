@@ -26,9 +26,8 @@ public static class WorkOrderEndpoints
         orders.MapPut("/{id:guid}/planning", PlanningAsync).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
         orders.MapPost("/{id:guid}/schedule", (Guid id, WorkOrderVersionRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.Scheduled, null, context, antiforgery, db)).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
         orders.MapPost("/{id:guid}/start", (Guid id, WorkOrderVersionRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.InProgress, null, context, antiforgery, db));
-        orders.MapPost("/{id:guid}/complete", (Guid id, CompleteWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.AwaitingClosure, request.CompletionNotes, context, antiforgery, db));
-        orders.MapPost("/{id:guid}/close", (Guid id, WorkOrderVersionRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.Closed, null, context, antiforgery, db)).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
-        orders.MapPost("/{id:guid}/cancel", (Guid id, WorkOrderVersionRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.Cancelled, null, context, antiforgery, db)).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
+        orders.MapPost("/{id:guid}/complete", (Guid id, CompleteWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.Completed, request.CompletionNotes, context, antiforgery, db));
+        orders.MapPost("/{id:guid}/cancel", (Guid id, CancelWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.Cancelled, request.CancellationReason, context, antiforgery, db)).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
     }
 
     private static bool IsManagement(HttpContext context) => context.User.IsInRole(IdentityRoles.Admin) || context.User.IsInRole(IdentityRoles.Manager);
@@ -42,13 +41,14 @@ public static class WorkOrderEndpoints
         if (!WorkOrderAgendaQuery.TryTimestamp(to, out var end)) return Error("to", "Informe o término com data, horário e fuso horário válidos.");
         var error = WorkOrderAgendaQuery.RangeError(start, end);
         if (error is not null) return Error("to", error);
-        var query = WorkOrderAgendaQuery.InRange(Visible(db, context).AsNoTracking(), start, end);
+        var query = WorkOrderAgendaQuery.InRange(Visible(db, context).AsNoTracking(), start, end, db.WorkOrderAuditRecords);
         query = WorkOrderAgendaQuery.ForAssignee(query, IsManagement(context), assignedUserId);
-        var entries = await query.OrderBy(order => order.ScheduledStart).ThenBy(order => order.ScheduledEnd)
+        var entries = await query.OrderBy(order => order.ScheduledStartDate).ThenBy(order => order.ScheduledStartTime)
+            .ThenBy(order => order.ScheduledEndDate).ThenBy(order => order.ScheduledEndTime)
             .ThenBy(order => order.Number).ThenBy(order => order.Id)
             .Select(order => new WorkOrderAgendaResponse(order.Id, order.Number, order.CustomerLegalNameSnapshot,
                 order.ServiceAddressSnapshot, order.Status, order.AssignedUserId, order.AssignedUserNameSnapshot,
-                order.ScheduledStart!.Value, order.ScheduledEnd!.Value,
+                order.ScheduledStartDate!.Value, order.ScheduledStartTime, order.ScheduledEndDate, order.ScheduledEndTime,
                 order.Items.OrderBy(item => item.DisplayOrder).ThenBy(item => item.Id)
                     .Select(item => new WorkOrderAgendaServiceResponse(item.ServiceCodeSnapshot, item.ServiceNameSnapshot)).ToList()))
             .ToListAsync();
@@ -87,7 +87,7 @@ public static class WorkOrderEndpoints
         var history = db.Database.ProviderName?.Contains("Sqlite") == true
             ? (await query.ToListAsync()).OrderBy(item => item.OccurredAtUtc).ThenBy(item => item.Id).ToList()
             : await query.OrderBy(item => item.OccurredAtUtc).ThenBy(item => item.Id).ToListAsync();
-        return Results.Ok(history.Select(item => new WorkOrderAuditResponse(item.Action, item.ActorUserId, item.OccurredAtUtc, item.ChangedFields)));
+        return Results.Ok(history.Select(item => new WorkOrderAuditResponse(item.Action, item.ActorUserId, item.ActorNameSnapshot ?? (string.IsNullOrEmpty(item.ActorUserId) ? "Sistema" : "Usuário não disponível"), item.OccurredAtUtc, item.ChangedFields, item.CancellationReason)));
     }
 
     private static async Task<IResult> EligibleAssigneesAsync(HttpContext context, ApplicationDbContext db)
@@ -117,7 +117,7 @@ public static class WorkOrderEndpoints
     private static async Task<IResult> CreateAsync(CreateWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db)
     {
         if (!await Csrf(context, antiforgery)) return CsrfFailure();
-        var errors = ValidatePlanning(request.ScheduledStart, request.ScheduledEnd, request.OperationalNotes);
+        var errors = ValidatePlanning(request.ScheduledStartDate, request.ScheduledEndDate, request.ScheduledStartTime, request.ScheduledEndTime, request.OperationalNotes);
         if (errors is not null) return Results.ValidationProblem(errors);
 
         var organizationId = TenantContext.OrganizationId(context);
@@ -130,7 +130,7 @@ public static class WorkOrderEndpoints
             .SingleOrDefaultAsync(item => item.Id == contract.QuoteId && item.OrganizationId == organizationId);
         if (quote is null) return Results.NotFound();
         if (string.IsNullOrWhiteSpace(quote.ServiceAddressSnapshot))
-            return Error("sourceId", "O orçamento de origem precisa ter um endereço de serviço válido.");
+            return Error("sourceId", "O contrato precisa ter um endereço de serviço válido.");
         if (contract.Items.Count == 0)
             return Error("sourceId", "O contrato precisa conter pelo menos um serviço operacional.");
 
@@ -156,7 +156,7 @@ public static class WorkOrderEndpoints
             QuoteId = quote.Id, ContractId = contract.Id, CustomerId = quote.CustomerId,
             CustomerLegalNameSnapshot = quote.CustomerLegalNameSnapshot, ServiceAddressSnapshot = quote.ServiceAddressSnapshot.Trim(),
             AssignedUserId = assignee?.Id, AssignedUserNameSnapshot = assignee?.FullName, AssignedUserEmailSnapshot = assignee?.Email,
-            ScheduledStart = request.ScheduledStart, ScheduledEnd = request.ScheduledEnd, OperationalNotes = Trim(request.OperationalNotes),
+            ScheduledStartDate = request.ScheduledStartDate, ScheduledEndDate = request.ScheduledEndDate, ScheduledStartTime = request.ScheduledStartTime, ScheduledEndTime = request.ScheduledEndTime, OperationalNotes = Trim(request.OperationalNotes),
             CreatedAtUtc = now, UpdatedAtUtc = now, CreatedByUserId = actor, UpdatedByUserId = actor, Version = Guid.NewGuid()
         };
         order.Items = contract.Items.Select(item => new WorkOrderItem
@@ -168,7 +168,7 @@ public static class WorkOrderEndpoints
         }).ToList();
 
         db.WorkOrders.Add(order);
-        Audit(db, order, actor, "WORK_ORDER_CREATED_FROM_CONTRACT", null);
+        await AuditAsync(db, order, actor, "WORK_ORDER_CREATED_FROM_CONTRACT", null);
         await CustomerActivityService.ReconcileAsync(db, order.CustomerId, actor, true, excludeWorkOrderId: order.Id);
         try { await db.SaveChangesAsync(); await transaction.CommitAsync(); }
         catch (DbUpdateException) { return Duplicate(); }
@@ -178,7 +178,7 @@ public static class WorkOrderEndpoints
     private static async Task<IResult> PlanningAsync(Guid id, UpdateWorkOrderPlanningRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db)
     {
         if (!await Csrf(context, antiforgery)) return CsrfFailure();
-        var errors = ValidatePlanning(request.ScheduledStart, request.ScheduledEnd, request.OperationalNotes);
+        var errors = ValidatePlanning(request.ScheduledStartDate, request.ScheduledEndDate, request.ScheduledStartTime, request.ScheduledEndTime, request.OperationalNotes);
         if (errors is not null) return Results.ValidationProblem(errors);
         var order = await Visible(db, context).Include(item => item.Items).SingleOrDefaultAsync(item => item.Id == id);
         if (order is null) return Results.NotFound();
@@ -186,15 +186,17 @@ public static class WorkOrderEndpoints
         if (!WorkOrderRules.CanPlan(order.Status)) return InvalidState();
         var assignee = await AssigneeAsync(db, order.OrganizationId, request.AssignedUserId);
         if (!string.IsNullOrWhiteSpace(request.AssignedUserId) && assignee is null) return Error("assignedUserId", "Selecione um profissional ativo e elegível desta organização.");
-        if (order.Status == WorkOrderStatus.Scheduled && (assignee is null || request.ScheduledStart is null || request.ScheduledEnd is null))
-            return Error("assignedUserId", "Uma OS agendada precisa manter profissional, início e término.");
+        if (order.Status == WorkOrderStatus.Scheduled && (assignee is null || request.ScheduledStartDate is null))
+            return Error("assignedUserId", "Uma OS agendada precisa manter profissional e data de início.");
         var fields = new List<string>();
         if (order.AssignedUserId != assignee?.Id) { order.AssignedUserId = assignee?.Id; order.AssignedUserNameSnapshot = assignee?.FullName; order.AssignedUserEmailSnapshot = assignee?.Email; fields.Add("AssignedUserId"); }
-        if (order.ScheduledStart != request.ScheduledStart) { order.ScheduledStart = request.ScheduledStart; fields.Add("ScheduledStart"); }
-        if (order.ScheduledEnd != request.ScheduledEnd) { order.ScheduledEnd = request.ScheduledEnd; fields.Add("ScheduledEnd"); }
+        if (order.ScheduledStartDate != request.ScheduledStartDate) { order.ScheduledStartDate = request.ScheduledStartDate; fields.Add("ScheduledStartDate"); }
+        if (order.ScheduledEndDate != request.ScheduledEndDate) { order.ScheduledEndDate = request.ScheduledEndDate; fields.Add("ScheduledEndDate"); }
+        if (order.ScheduledStartTime != request.ScheduledStartTime) { order.ScheduledStartTime = request.ScheduledStartTime; fields.Add("ScheduledStartTime"); }
+        if (order.ScheduledEndTime != request.ScheduledEndTime) { order.ScheduledEndTime = request.ScheduledEndTime; fields.Add("ScheduledEndTime"); }
         var notes = Trim(request.OperationalNotes); if (order.OperationalNotes != notes) { order.OperationalNotes = notes; fields.Add("OperationalNotes"); }
         if (fields.Count == 0) return Results.Ok(Detail(order));
-        Touch(order, Actor(context)); Audit(db, order, Actor(context), "WORK_ORDER_PLANNING_UPDATED", string.Join(',', fields));
+        Touch(order, Actor(context)); await AuditAsync(db, order, Actor(context), "WORK_ORDER_PLANNING_UPDATED", string.Join(',', fields));
         try { await db.SaveChangesAsync(); return Results.Ok(Detail(order)); } catch (DbUpdateConcurrencyException) { return Stale(); }
     }
 
@@ -208,20 +210,21 @@ public static class WorkOrderEndpoints
         if (target == WorkOrderStatus.Scheduled)
         {
             if (order.AssignedUserId is null || await AssigneeAsync(db, order.OrganizationId, order.AssignedUserId) is null) return Error("assignedUserId", "Atribua um profissional ativo e elegível antes de agendar.");
-            if (order.ScheduledStart is null || order.ScheduledEnd is null || !WorkOrderRules.HasValidSchedule(order.ScheduledStart, order.ScheduledEnd)) return Error("scheduledStart", "Informe início e término válidos antes de agendar.");
+            if (!WorkOrderRules.CanSchedule(order.AssignedUserId, order.ScheduledStartDate) || !WorkOrderRules.HasValidSchedule(order.ScheduledStartDate, order.ScheduledEndDate, order.ScheduledStartTime, order.ScheduledEndTime)) return Error("scheduledStartDate", "Informe a data de início antes de agendar.");
             if (string.IsNullOrWhiteSpace(order.ServiceAddressSnapshot)) return Error("serviceAddress", "A OS precisa ter um endereço de serviço válido.");
             if (order.Items.Count == 0) return Error("items", "A OS precisa conter pelo menos um serviço.");
         }
-        if (target == WorkOrderStatus.AwaitingClosure && completionNotes?.Trim().Length > 2000) return Error("completionNotes", "As observações de conclusão devem ter no máximo 2.000 caracteres.");
+        if (target == WorkOrderStatus.Completed && completionNotes?.Trim().Length > 2000) return Error("completionNotes", "As observações de conclusão devem ter no máximo 2.000 caracteres.");
+        if (target == WorkOrderStatus.Cancelled && completionNotes?.Trim().Length > 500) return Error("cancellationReason", "Use no máximo 500 caracteres para o motivo do cancelamento.");
         var now = DateTimeOffset.UtcNow;
         order.Status = target;
         if (target == WorkOrderStatus.InProgress) order.StartedAtUtc = now;
-        if (target == WorkOrderStatus.AwaitingClosure) { order.ExecutionCompletedAtUtc = now; order.CompletionNotes = Trim(completionNotes); }
-        if (target == WorkOrderStatus.Closed) order.ClosedAtUtc = now;
+        if (target == WorkOrderStatus.Completed) { order.ExecutionCompletedAtUtc = now; order.CompletionNotes = Trim(completionNotes); }
+
         if (target == WorkOrderStatus.Cancelled) order.CancelledAtUtc = now;
         Touch(order, Actor(context));
-        var action = target switch { WorkOrderStatus.Scheduled => "WORK_ORDER_SCHEDULED", WorkOrderStatus.InProgress => "WORK_ORDER_STARTED", WorkOrderStatus.AwaitingClosure => "WORK_ORDER_EXECUTION_COMPLETED", WorkOrderStatus.Closed => "WORK_ORDER_CLOSED", _ => "WORK_ORDER_CANCELLED" };
-        Audit(db, order, Actor(context), action, target == WorkOrderStatus.AwaitingClosure && order.CompletionNotes is not null ? "CompletionNotes" : null);
+        var action = target switch { WorkOrderStatus.Scheduled => "WORK_ORDER_SCHEDULED", WorkOrderStatus.InProgress => "WORK_ORDER_STARTED", WorkOrderStatus.Completed => "WORK_ORDER_EXECUTION_COMPLETED", _ => "WORK_ORDER_CANCELLED" };
+        await AuditAsync(db, order, Actor(context), action, target == WorkOrderStatus.Completed && order.CompletionNotes is not null ? "CompletionNotes" : null, target == WorkOrderStatus.Cancelled ? Trim(completionNotes) : null);
         await CustomerActivityService.ReconcileAsync(db, order.CustomerId, Actor(context), CustomerActivityService.IsActiveRelationship(target), excludeWorkOrderId: order.Id, cancelledWorkOrder: target == WorkOrderStatus.Cancelled);
         try { await db.SaveChangesAsync(); return Results.Ok(Detail(order)); } catch (DbUpdateConcurrencyException) { return Stale(); }
     }
@@ -244,17 +247,21 @@ public static class WorkOrderEndpoints
         var value = await command.ExecuteScalarAsync(); return value is null ? null : $"OS-{year}-{Convert.ToInt32(value):000000}";
     }
 
-    private static Dictionary<string, string[]>? ValidatePlanning(DateTimeOffset? start, DateTimeOffset? end, string? notes)
+    private static Dictionary<string, string[]>? ValidatePlanning(DateOnly? start, DateOnly? end, TimeOnly? startTime, TimeOnly? endTime, string? notes)
     {
         var errors = new Dictionary<string, string[]>();
-        if (!WorkOrderRules.HasValidSchedule(start, end)) errors["scheduledEnd"] = ["O término deve ser posterior ao início."];
+        if (!WorkOrderRules.HasValidSchedule(start, end, startTime, endTime)) errors["scheduledEndDate"] = ["Revise as datas e horários: informe a data correspondente a cada horário e um término posterior ao início."];
         if (notes?.Trim().Length > 2000) errors["operationalNotes"] = ["As observações operacionais devem ter no máximo 2.000 caracteres."];
         return errors.Count == 0 ? null : errors;
     }
-    private static WorkOrderSummaryResponse Summary(WorkOrder order) => new(order.Id, order.Number, order.SourceType, order.QuoteId, order.ContractId, order.CustomerId, order.CustomerLegalNameSnapshot, order.Status, order.AssignedUserId, order.AssignedUserNameSnapshot, order.ScheduledStart, order.ScheduledEnd, order.UpdatedAtUtc);
-    private static WorkOrderDetailResponse Detail(WorkOrder order) => new(order.Id, order.Number, order.SourceType, order.QuoteId, order.ContractId, order.CustomerId, order.CustomerLegalNameSnapshot, order.ServiceAddressSnapshot, order.Status, order.AssignedUserId, order.AssignedUserNameSnapshot, order.AssignedUserEmailSnapshot, order.ScheduledStart, order.ScheduledEnd, order.StartedAtUtc, order.ExecutionCompletedAtUtc, order.ClosedAtUtc, order.CancelledAtUtc, order.OperationalNotes, order.CompletionNotes, order.CreatedAtUtc, order.UpdatedAtUtc, order.Version, order.Items.OrderBy(item => item.DisplayOrder).Select(item => new WorkOrderItemResponse(item.Id, item.QuoteItemId, item.ContractItemId, item.ServiceId, item.ServiceCodeSnapshot, item.ServiceNameSnapshot, item.ServiceLineIdSnapshot, item.ServiceLineCodeSnapshot, item.ServiceLineNameSnapshot, item.DisplayOrder)).ToList());
+    private static WorkOrderSummaryResponse Summary(WorkOrder order) => new(order.Id, order.Number, order.SourceType, order.QuoteId, order.ContractId, order.CustomerId, order.CustomerLegalNameSnapshot, order.Status, order.AssignedUserId, order.AssignedUserNameSnapshot, order.ScheduledStartDate, order.ScheduledStartTime, order.ScheduledEndDate, order.ScheduledEndTime, order.UpdatedAtUtc);
+    private static WorkOrderDetailResponse Detail(WorkOrder order) => new(order.Id, order.Number, order.SourceType, order.QuoteId, order.ContractId, order.CustomerId, order.CustomerLegalNameSnapshot, order.ServiceAddressSnapshot, order.Status, order.AssignedUserId, order.AssignedUserNameSnapshot, order.AssignedUserEmailSnapshot, order.ScheduledStartDate, order.ScheduledStartTime, order.ScheduledEndDate, order.ScheduledEndTime, order.StartedAtUtc, order.ExecutionCompletedAtUtc, order.ClosedAtUtc, order.CancelledAtUtc, order.OperationalNotes, order.CompletionNotes, order.CreatedAtUtc, order.UpdatedAtUtc, order.Version, order.Items.OrderBy(item => item.DisplayOrder).Select(item => new WorkOrderItemResponse(item.Id, item.QuoteItemId, item.ContractItemId, item.ServiceId, item.ServiceCodeSnapshot, item.ServiceNameSnapshot, item.ServiceLineIdSnapshot, item.ServiceLineCodeSnapshot, item.ServiceLineNameSnapshot, item.DisplayOrder)).ToList());
     private static void Touch(WorkOrder order, string actor) { order.UpdatedAtUtc = DateTimeOffset.UtcNow; order.UpdatedByUserId = actor; order.Version = Guid.NewGuid(); }
-    private static void Audit(ApplicationDbContext db, WorkOrder order, string actor, string action, string? fields) => db.WorkOrderAuditRecords.Add(new WorkOrderAuditRecord { Id = Guid.NewGuid(), WorkOrderId = order.Id, ActorUserId = actor, Action = action, OccurredAtUtc = DateTimeOffset.UtcNow, ChangedFields = fields });
+    private static async Task AuditAsync(ApplicationDbContext db, WorkOrder order, string actor, string action, string? fields, string? cancellationReason = null)
+    {
+        var user = await db.Users.SingleOrDefaultAsync(user => user.Id == actor && user.OrganizationId == order.OrganizationId);
+        db.WorkOrderAuditRecords.Add(WorkOrderAudit.Create(order, actor, user, action, fields, cancellationReason));
+    }
     private static string? Trim(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static async Task<bool> Csrf(HttpContext context, IAntiforgery antiforgery) { try { await antiforgery.ValidateRequestAsync(context); return true; } catch (AntiforgeryValidationException) { return false; } }
     private static IResult CsrfFailure() => Results.BadRequest(new { error = "Não foi possível validar a solicitação. Atualize a página e tente novamente." });

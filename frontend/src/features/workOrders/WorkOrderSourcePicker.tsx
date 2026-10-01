@@ -23,18 +23,17 @@ export function WorkOrderSourcePicker({ go, onSessionExpired }: Props) {
     catch (caught) {
       if (currentRequest !== requestId.current) return
       if (caught instanceof ApiError && caught.status === 401) onSessionExpired()
-      else setError(caught instanceof ApiError && caught.status === 403 ? 'Você não tem permissão para escolher origens de OS.' : 'Não foi possível carregar as origens. Tente novamente.')
+      else setError(caught instanceof ApiError && caught.status === 403 ? 'Você não tem permissão para selecionar contratos.' : 'Não foi possível carregar os contratos. Tente novamente.')
     }
   }, [type, page, search, onSessionExpired])
   useEffect(() => { void load() }, [load])
   const applySearch = () => { setPage(1); setSearch(input.trim()) }
   return <>
     <div className="page-title"><div><p className="eyebrow">Operação</p><h2>Nova Ordem de Serviço</h2><p>Escolha um contrato ativo para iniciar um rascunho operacional.</p></div></div>
-    <section className="card wo-source-toolbar" aria-label="Buscar origem da OS">
-      <p>Origem: contrato ativo</p>
-      <form onSubmit={event => { event.preventDefault(); applySearch() }}><label>Buscar por cliente ou número do orçamento<input value={input} maxLength={120} onChange={event => setInput(event.target.value)}/></label><button>Buscar</button>{search && <button type="button" className="link-button" onClick={() => { setInput(''); setSearch(''); setPage(1) }}>Limpar busca</button>}</form>
+    <section className="card wo-source-toolbar" aria-label="Buscar contrato para a OS">
+      <form onSubmit={event => { event.preventDefault(); applySearch() }}><label>Buscar por cliente ou número do contrato<input value={input} maxLength={120} onChange={event => setInput(event.target.value)}/></label><button>Buscar</button>{search && <button type="button" className="link-button" onClick={() => { setInput(''); setSearch(''); setPage(1) }}>Limpar busca</button>}</form>
     </section>
-    {error ? <section className="card error-panel"><p role="alert">{error}</p><button className="secondary" onClick={() => void load()}>Tentar novamente</button></section> : !data ? <LoadingState /> : data.items.length === 0 ? <section className="card empty-state"><h3>Nenhuma origem encontrada</h3><p>{search ? 'Tente outro nome ou número de orçamento.' : 'Não há contratos ativos disponíveis nesta organização.'}</p></section> : <section className="wo-source-results" aria-label="Origens disponíveis">{data.items.map(source => <SourceCard key={`${source.sourceType}-${source.id}`} source={source} go={go}/>)}</section>}
+    {error ? <section className="card error-panel"><p role="alert">{error}</p><button className="secondary" onClick={() => void load()}>Tentar novamente</button></section> : !data ? <LoadingState /> : data.items.length === 0 ? <section className="card empty-state"><h3>Nenhum contrato ativo encontrado</h3><p>{search ? 'Tente outro nome ou número de contrato.' : 'Não há contratos ativos disponíveis nesta organização.'}</p></section> : <section className="wo-source-results" aria-label="Contratos disponíveis">{data.items.map(source => <SourceCard key={`${source.sourceType}-${source.id}`} source={source} go={go}/>)}</section>}
     {data && data.totalCount > data.pageSize && <div className="pagination"><button className="secondary" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {data.page} de {Math.ceil(data.totalCount / data.pageSize)}</span><button className="secondary" disabled={page * data.pageSize >= data.totalCount} onClick={() => setPage(value => value + 1)}>Próxima</button></div>}
   </>
 }

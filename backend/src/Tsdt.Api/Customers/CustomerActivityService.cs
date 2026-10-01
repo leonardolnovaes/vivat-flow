@@ -10,7 +10,7 @@ public static class CustomerActivityService
 {
     public static bool IsActiveRelationship(QuoteStatus status) => status is QuoteStatus.Draft or QuoteStatus.AwaitingApproval or QuoteStatus.ChangesRequested or QuoteStatus.Approved;
     public static bool IsActiveRelationship(ContractStatus status) => status == ContractStatus.Active;
-    public static bool IsActiveRelationship(WorkOrderStatus status) => status is WorkOrderStatus.Draft or WorkOrderStatus.Scheduled or WorkOrderStatus.InProgress or WorkOrderStatus.AwaitingClosure;
+    public static bool IsActiveRelationship(WorkOrderStatus status) => status is WorkOrderStatus.Draft or WorkOrderStatus.Scheduled or WorkOrderStatus.InProgress;
     public static bool ShouldRemainActive(bool activeQuote, bool approvedQuoteAwaitingNextStep, bool activeContract, bool activeWorkOrder)
         => activeQuote || approvedQuoteAwaitingNextStep || activeContract || activeWorkOrder;
 
@@ -24,7 +24,7 @@ public static class CustomerActivityService
             !db.WorkOrders.Any(order => order.QuoteId == x.Id && order.Status != WorkOrderStatus.Cancelled && (!cancelledWorkOrder || order.Id != excludeWorkOrderId)));
         var activeContract = await db.Contracts.AnyAsync(x => x.CustomerId == customerId && x.Id != excludeContractId && x.Status == ContractStatus.Active);
         var activeWorkOrder = await db.WorkOrders.AnyAsync(x => x.CustomerId == customerId && x.Id != excludeWorkOrderId &&
-            (x.Status == WorkOrderStatus.Draft || x.Status == WorkOrderStatus.Scheduled || x.Status == WorkOrderStatus.InProgress || x.Status == WorkOrderStatus.AwaitingClosure));
+            (x.Status == WorkOrderStatus.Draft || x.Status == WorkOrderStatus.Scheduled || x.Status == WorkOrderStatus.InProgress));
         return ShouldRemainActive(activeQuote, approvedAwaitingNextStep, activeContract, activeWorkOrder);
     }
 

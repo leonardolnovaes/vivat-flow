@@ -1,7 +1,7 @@
 namespace Tsdt.Api.WorkOrders;
 
 public enum WorkOrderSourceType { Quote, Contract }
-public enum WorkOrderStatus { Draft, Scheduled, InProgress, AwaitingClosure, Closed, Cancelled }
+public enum WorkOrderStatus { Draft, Scheduled, InProgress, Completed, Cancelled }
 
 public sealed class WorkOrder
 {
@@ -18,8 +18,10 @@ public sealed class WorkOrder
     public string? AssignedUserId { get; set; }
     public string? AssignedUserNameSnapshot { get; set; }
     public string? AssignedUserEmailSnapshot { get; set; }
-    public DateTimeOffset? ScheduledStart { get; set; }
-    public DateTimeOffset? ScheduledEnd { get; set; }
+    public DateOnly? ScheduledStartDate { get; set; }
+    public TimeOnly? ScheduledStartTime { get; set; }
+    public DateOnly? ScheduledEndDate { get; set; }
+    public TimeOnly? ScheduledEndTime { get; set; }
     public DateTimeOffset? StartedAtUtc { get; set; }
     public DateTimeOffset? ExecutionCompletedAtUtc { get; set; }
     public DateTimeOffset? ClosedAtUtc { get; set; }
@@ -55,6 +57,8 @@ public sealed class WorkOrderAuditRecord
     public Guid Id { get; set; }
     public Guid WorkOrderId { get; set; }
     public required string ActorUserId { get; set; }
+    public string? ActorNameSnapshot { get; set; }
+    public string? CancellationReason { get; set; }
     public required string Action { get; set; }
     public DateTimeOffset OccurredAtUtc { get; set; }
     public string? ChangedFields { get; set; }

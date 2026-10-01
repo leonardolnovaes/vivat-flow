@@ -16,7 +16,10 @@ public sealed class WorkOrderAgendaQueryTests
         DateTimeOffset? start = null, DateTimeOffset? end = null) => new()
     {
         Id = Guid.NewGuid(), OrganizationId = tenant ?? Tenant, Number = "OS-2026-000001", Status = status,
-        AssignedUserId = actor, ScheduledStart = start ?? From.AddHours(9), ScheduledEnd = end ?? From.AddHours(11),
+        AssignedUserId = actor, ScheduledStartDate = DateOnly.FromDateTime((start ?? From.AddHours(9)).ToOffset(TimeSpan.FromHours(-3)).DateTime),
+        ScheduledStartTime = TimeOnly.FromDateTime((start ?? From.AddHours(9)).ToOffset(TimeSpan.FromHours(-3)).DateTime),
+        ScheduledEndDate = DateOnly.FromDateTime((end ?? From.AddHours(11)).ToOffset(TimeSpan.FromHours(-3)).DateTime),
+        ScheduledEndTime = TimeOnly.FromDateTime((end ?? From.AddHours(11)).ToOffset(TimeSpan.FromHours(-3)).DateTime),
         CustomerLegalNameSnapshot = "Historical customer", ServiceAddressSnapshot = "Historical address",
         CreatedByUserId = "test", UpdatedByUserId = "test"
     };
@@ -24,8 +27,7 @@ public sealed class WorkOrderAgendaQueryTests
     [Theory]
     [InlineData(WorkOrderStatus.Scheduled, true)]
     [InlineData(WorkOrderStatus.InProgress, true)]
-    [InlineData(WorkOrderStatus.AwaitingClosure, true)]
-    [InlineData(WorkOrderStatus.Closed, true)]
+    [InlineData(WorkOrderStatus.Completed, true)]
     [InlineData(WorkOrderStatus.Draft, false)]
     [InlineData(WorkOrderStatus.Cancelled, false)]
     public void Only_formally_scheduled_lifecycle_states_appear(WorkOrderStatus status, bool expected)
@@ -48,10 +50,10 @@ public sealed class WorkOrderAgendaQueryTests
     [Fact]
     public void Missing_schedule_is_excluded()
     {
-        var order = Order(); order.ScheduledStart = null;
+        var order = Order(); order.ScheduledStartDate = null;
         Assert.Empty(WorkOrderAgendaQuery.InRange(new[] { order }.AsQueryable(), From, To));
-        order.ScheduledStart = From; order.ScheduledEnd = null;
-        Assert.Empty(WorkOrderAgendaQuery.InRange(new[] { order }.AsQueryable(), From, To));
+        order.ScheduledStartDate = DateOnly.FromDateTime(From.DateTime); order.ScheduledEndDate = null; order.ScheduledEndTime = null;
+        Assert.Single(WorkOrderAgendaQuery.InRange(new[] { order }.AsQueryable(), From, To));
     }
 
     [Fact]
@@ -62,6 +64,19 @@ public sealed class WorkOrderAgendaQueryTests
         Assert.NotNull(WorkOrderAgendaQuery.RangeError(From, From.AddDays(62).AddTicks(1)));
         Assert.Null(WorkOrderAgendaQuery.RangeError(From, From.AddDays(62)));
         Assert.Null(WorkOrderAgendaQuery.RangeError(From, To));
+    }
+
+    [Fact]
+    public void Date_only_open_ended_orders_are_visible_without_invented_times()
+    {
+        var order = Order();
+        order.ScheduledStartTime = null; order.ScheduledEndDate = null; order.ScheduledEndTime = null;
+        Assert.Single(WorkOrderAgendaQuery.InRange(new[] { order }.AsQueryable(), From, To));
+        Assert.Empty(WorkOrderAgendaQuery.InRange(new[] { order }.AsQueryable(), To, To.AddDays(1)));
+        order.ScheduledEndDate = DateOnly.FromDateTime(To.DateTime);
+        Assert.Single(WorkOrderAgendaQuery.InRange(new[] { order }.AsQueryable(), To, To.AddDays(1)));
+        order.ScheduledEndTime = TimeOnly.MinValue;
+        Assert.Empty(WorkOrderAgendaQuery.InRange(new[] { order }.AsQueryable(), To, To.AddDays(1)));
     }
 
     [Theory]
@@ -89,12 +104,26 @@ public sealed class WorkOrderAgendaQueryTests
             .UseNpgsql("Host=localhost;Database=unused_agenda_query").Options;
         using var db = new ApplicationDbContext(options);
         var visible = WorkOrderAgendaQuery.Visible(db.WorkOrders, Tenant, false, "worker");
-        var query = WorkOrderAgendaQuery.InRange(visible, From, To);
+        var query = WorkOrderAgendaQuery.InRange(visible, From, To, db.WorkOrderAuditRecords);
         var sql = query.ToQueryString();
         Assert.Contains("ScheduledStart", sql);
         Assert.Contains("ScheduledEnd", sql);
         Assert.Contains("OrganizationId", sql);
         Assert.Contains("AssignedUserId", sql);
+        Assert.Contains("WORK_ORDER_SCHEDULED", sql);
+    }
+
+    [Fact]
+    public void Cancelled_orders_require_their_own_formal_scheduling_history()
+    {
+        var order = Order(WorkOrderStatus.Cancelled);
+        var orders = new[] { order }.AsQueryable();
+        var history = new List<WorkOrderAuditRecord>();
+        Assert.Empty(WorkOrderAgendaQuery.InRange(orders, From, To, history.AsQueryable()));
+        history.Add(new() { Id = Guid.NewGuid(), WorkOrderId = Guid.NewGuid(), ActorUserId = "worker", Action = "WORK_ORDER_SCHEDULED" });
+        Assert.Empty(WorkOrderAgendaQuery.InRange(orders, From, To, history.AsQueryable()));
+        history.Add(new() { Id = Guid.NewGuid(), WorkOrderId = order.Id, ActorUserId = "worker", Action = "WORK_ORDER_SCHEDULED" });
+        Assert.Single(WorkOrderAgendaQuery.InRange(orders, From, To, history.AsQueryable()));
     }
 
     [Fact]

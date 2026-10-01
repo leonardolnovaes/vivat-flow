@@ -7,6 +7,18 @@ const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.Modu
 const moduleRef = { exports: {} }
 new Function('module', 'exports', compiled)(moduleRef, moduleRef.exports)
 const { visiblePeriod, movePeriod, overlapsDay, sameDay, periodLabel } = moduleRef.exports
+const { scheduledOnDay, eventHour } = moduleRef.exports
+
+test('date-only schedules include their end day without inventing a time', () => {
+  const entry = { scheduledStartDate: '2026-10-01', scheduledStartTime: null, scheduledEndDate: '2026-10-02', scheduledEndTime: null }
+  assert.equal(scheduledOnDay(entry, new Date(2026, 9, 1)), true)
+  assert.equal(scheduledOnDay(entry, new Date(2026, 9, 2)), true)
+  assert.equal(scheduledOnDay(entry, new Date(2026, 9, 3)), false)
+  assert.equal(eventHour(entry, new Date(2026, 9, 1)), null)
+  assert.equal(scheduledOnDay({ ...entry, scheduledEndDate: null }, new Date(2026, 9, 2)), false)
+  assert.equal(scheduledOnDay({ ...entry, scheduledEndTime: '00:00:00' }, new Date(2026, 9, 2)), false)
+  assert.equal(eventHour({ ...entry, scheduledStartTime: '23:00:00' }, new Date(2026, 9, 2)), 0)
+})
 
 test('day boundaries use local midnight and an exclusive next midnight', () => {
   const day = new Date(2026, 9, 1, 23, 59)

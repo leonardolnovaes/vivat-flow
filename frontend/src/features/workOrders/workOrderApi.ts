@@ -1,3 +1,4 @@
+import { planningPayload } from './planning'
 import { ApiError, request } from '../../api'
 import type { AgendaEntry, EligibleAssignee, Planning, WorkOrder, WorkOrderHistory, WorkOrderList, WorkOrderSourceDetail, WorkOrderSourceList, WorkOrderSource } from './types'
 
@@ -15,16 +16,6 @@ export const listWorkOrderSources = (query: URLSearchParams) => call<WorkOrderSo
 export const getWorkOrderSource = (type: WorkOrderSource, id: string) => call<WorkOrderSourceDetail>(`/api/work-orders/sources/${type.toLowerCase()}/${id}`)
 export const createWorkOrder = (contractId: string, planning: Planning) => call<WorkOrder>('/api/work-orders/from-contract', { method: 'POST', body: JSON.stringify({ sourceId: contractId, ...planningPayload(planning) }) })
 export const saveWorkOrderPlanning = (id: string, version: string, planning: Planning) => call<WorkOrder>(`/api/work-orders/${id}/planning`, { method: 'PUT', body: JSON.stringify({ expectedVersion: version, ...planningPayload(planning) }) })
-export const transitionWorkOrder = (id: string, action: 'schedule' | 'start' | 'complete' | 'close' | 'cancel', version: string, completionNotes?: string) => call<WorkOrder>(`/api/work-orders/${id}/${action}`, { method: 'POST', body: JSON.stringify({ expectedVersion: version, ...(action === 'complete' ? { completionNotes: completionNotes?.trim() || null } : {}) }) })
-
-export function toLocalInput(value: string | null) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-  return local.toISOString().slice(0, 16)
-}
-function toOffsetIso(value: string) { return value ? new Date(value).toISOString() : null }
-function planningPayload(planning: Planning) { return { assignedUserId: planning.assignedUserId || null, scheduledStart: toOffsetIso(planning.scheduledStart), scheduledEnd: toOffsetIso(planning.scheduledEnd), operationalNotes: planning.operationalNotes.trim() || null } }
+export const transitionWorkOrder = (id: string, action: 'schedule' | 'start' | 'complete' | 'cancel', version: string, completionNotes?: string, cancellationReason?: string) => call<WorkOrder>(`/api/work-orders/${id}/${action}`, { method: 'POST', body: JSON.stringify({ expectedVersion: version, ...(action === 'complete' ? { completionNotes: completionNotes?.trim() || null } : action === 'cancel' ? { cancellationReason: cancellationReason?.trim() || null } : {}) }) })
 
 export const getAgenda = (query: URLSearchParams) => call<AgendaEntry[]>(`/api/work-orders/agenda?${query}`)
