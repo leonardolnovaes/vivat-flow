@@ -116,6 +116,8 @@ public sealed class QuoteApiTests
         var submitted = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/submit", new SendQuoteForApprovalRequest(quote.Version, [contact.Contact.Id], null));
         var reopened = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/reopen", new QuoteVersionRequest(submitted.Version));
         var submittedAgain = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/submit", new SendQuoteForApprovalRequest(reopened.Version, [contact.Contact.Id], null));
+        Assert.Single(submittedAgain.ApprovalRecipients!);
+        Assert.Equal(contact.Contact.Id, submittedAgain.ApprovalRecipients!.Single().ContactId);
         var cancelled = await Send<QuoteDetailResponse>(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/cancel", new QuoteVersionRequest(submittedAgain.Version));
         Assert.Equal(QuoteStatus.Cancelled, cancelled.Status); Assert.Equal(HttpStatusCode.Conflict, (await SendResponse(admin, HttpMethod.Post, $"/api/quotes/{quote.Id}/approve", new QuoteVersionRequest(cancelled.Version))).StatusCode);
         using var scope = factory.Services.CreateScope(); var actions = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().QuoteAuditRecords.Where(x => x.QuoteId == quote.Id).Select(x => x.Action).ToListAsync(); Assert.Equal(["QUOTE_CREATED", "QUOTE_SENT_FOR_APPROVAL", "QUOTE_REOPENED", "QUOTE_SENT_FOR_APPROVAL", "QUOTE_CANCELLED"], actions);

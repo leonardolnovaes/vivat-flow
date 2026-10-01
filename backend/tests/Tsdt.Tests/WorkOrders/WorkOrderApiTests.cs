@@ -42,6 +42,20 @@ public sealed class WorkOrderApiTests
     }
 
     [Fact, Trait("Category", "Integration")]
+    public async Task Legacy_quote_origin_unfinished_order_blocks_contract_creation_for_the_same_quote()
+    {
+        using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
+        var quote = await SeedQuoteAsync(factory); var contract = await SeedActiveContractAsync(factory, quote);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.WorkOrders.Add(new WorkOrder { Id = Guid.NewGuid(), OrganizationId = quote.OrganizationId, Number = "OS-LEGACY", SourceType = WorkOrderSourceType.Quote, QuoteId = quote.Id, CustomerId = quote.CustomerId, CustomerLegalNameSnapshot = quote.CustomerLegalNameSnapshot, ServiceAddressSnapshot = "Original address", Status = WorkOrderStatus.Scheduled, CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow, CreatedByUserId = "test", UpdatedByUserId = "test", Version = Guid.NewGuid() });
+            await db.SaveChangesAsync();
+        }
+        Assert.Equal(HttpStatusCode.Conflict, (await Post(admin, "/api/work-orders/from-contract", new CreateWorkOrderRequest(contract.Id, null, null, null, null))).StatusCode);
+    }
+
+    [Fact, Trait("Category", "Integration")]
     public async Task Contract_governance_and_source_validation_are_enforced()
     {
         using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
