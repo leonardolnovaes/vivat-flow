@@ -48,20 +48,29 @@ export function RelatedWorkOrderAction({ quoteId, contractId, eligible, go }: { 
   const [canCreate, setCanCreate] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const requestId = useRef(0)
   const load = useCallback(async () => {
+    const currentRequest = ++requestId.current
     setLoading(true); setError(false)
-    try { const result = await getWorkOrderSource(contractId ? 'Contract' : 'Quote', contractId ?? quoteId); setCurrentOrderId(result.source.currentWorkOrderId); setGoverningContract(result.source.governingContractId ? { id: result.source.governingContractId, status: result.source.governingContractStatus ?? '' } : null); setCanCreate(result.source.canCreate) }
-    catch { setError(true) }
-    finally { setLoading(false) }
-  }, [quoteId, contractId])
+    try {
+      if (!contractId) { if (currentRequest === requestId.current) { setCurrentOrderId(null); setGoverningContract(null); setCanCreate(false) }; return }
+      const result = await getWorkOrderSource('Contract', contractId)
+      if (currentRequest !== requestId.current) return
+      setCurrentOrderId(result.source.currentWorkOrderId)
+      setGoverningContract(null)
+      setCanCreate(result.source.canCreate)
+    }
+    catch { if (currentRequest === requestId.current) setError(true) }
+    finally { if (currentRequest === requestId.current) setLoading(false) }
+  }, [contractId])
   useEffect(() => { void load() }, [load])
   if (loading) return <LoadingState size="sm" />
   if (error) return <div className="actions"><p>Não foi possível verificar a OS vinculada.</p><button className="secondary" onClick={() => void load()}>Tentar novamente</button></div>
   if (currentOrderId) return <button type="button" className="secondary" onClick={() => go(`/ordens-servico/${currentOrderId}`)}>Ver OS</button>
-  if (governingContract) return <p className="wo-hint">Este orçamento possui contrato {governingContract.status === 'Active' ? 'ativo' : 'em formalização'}. {governingContract.status === 'Active' ? 'Crie a OS a partir do contrato.' : 'Aguarde a ativação do contrato para criar a OS.'} {governingContract.status === 'Active' && <button className="link-button" onClick={() => go(`/ordens-servico/novo?contractId=${governingContract.id}`)}>Usar contrato</button>}</p>
-  if (!eligible) return null
-  if (!canCreate) return <p className="wo-hint">Informe um local válido e pelo menos um serviço operacional antes de criar a OS.</p>
-  return <button type="button" onClick={() => go(`/ordens-servico/novo?${contractId ? `contractId=${contractId}` : `quoteId=${quoteId}`}`)}>Criar OS</button>
+  if (governingContract) return null
+  if (!eligible || !contractId) return null
+  if (!canCreate) return <p className="wo-hint">Finalize a OS em aberto ou verifique o local e os serviços antes de criar uma nova OS.</p>
+  return <button type="button" onClick={() => go(`/ordens-servico/novo?contractId=${contractId}`)}>Criar OS</button>
 }
 
 function List({ go, onSessionExpired, user }: Props) {
@@ -87,23 +96,28 @@ function List({ go, onSessionExpired, user }: Props) {
 function Create({ quoteId, contractId, go, onSessionExpired }: Props & { quoteId: string | null; contractId: string | null }) {
   const [source, setSource] = useState<Source | null>(null), [existingId, setExistingId] = useState<string | null>(null), [governingContract, setGoverningContract] = useState<{ id: string; status: string } | null>(null), [people, setPeople] = useState<EligibleAssignee[]>([])
   const [form, setForm] = useState<Planning>(blank), [errors, setErrors] = useState<Errors>({}), [error, setError] = useState(''), [loading, setLoading] = useState(true), [pending, setPending] = useState(false)
-  const sourceId = quoteId || contractId
+  const loadRequestId = useRef(0)
   const load = useCallback(async () => {
-    if (!sourceId || Boolean(quoteId) === Boolean(contractId)) { setError('Selecione uma origem para criar a OS.'); setLoading(false); return }
-    setLoading(true); setError('')
+    const currentRequest = ++loadRequestId.current
+    if (!contractId || quoteId) { setSource(null); setError('Selecione um contrato ativo para criar a OS.'); setLoading(false); return }
+    setLoading(true); setError(''); setSource(null); setExistingId(null); setGoverningContract(null)
     try {
-      const [record, assignees] = await Promise.all([getWorkOrderSource(quoteId ? 'Quote' : 'Contract', sourceId), getEligibleAssignees()])
-      setPeople(assignees); setExistingId(record.source.currentWorkOrderId); setGoverningContract(record.source.governingContractId ? { id: record.source.governingContractId, status: record.source.governingContractStatus ?? '' } : null)
-      setSource({ id: record.source.id, kind: record.source.sourceType === 'Quote' ? 'quote' : 'contract', status: record.source.status, customer: record.source.customerLegalNameSnapshot, address: record.source.serviceAddressSnapshot, items: record.items, canCreate: record.source.canCreate })
-    } catch (caught) { setError(problem(caught, onSessionExpired, 'Não foi possível carregar a origem da OS.')) }
-    finally { setLoading(false) }
-  }, [quoteId, contractId, sourceId, onSessionExpired])
+      const [record, assignees] = await Promise.all([getWorkOrderSource('Contract', contractId), getEligibleAssignees()])
+      if (currentRequest !== loadRequestId.current) return
+      setPeople(assignees)
+      setExistingId(record.source.currentWorkOrderId)
+      setSource({ id: record.source.id, kind: 'contract', status: record.source.status, customer: record.source.customerLegalNameSnapshot, address: record.source.serviceAddressSnapshot, items: record.items, canCreate: record.source.canCreate })
+    } catch (caught) {
+      if (currentRequest === loadRequestId.current) setError(problem(caught, onSessionExpired, 'Não foi possível carregar o contrato da OS.'))
+    }
+    finally { if (currentRequest === loadRequestId.current) setLoading(false) }
+  }, [quoteId, contractId, onSessionExpired])
   useEffect(() => { void load() }, [load])
   const save = async (event: FormEvent) => {
     event.preventDefault(); if (!source || pending || !source.canCreate) return
     const next = validatePlanning(form); setErrors(next); if (Object.keys(next).length) return
     setPending(true); setError('')
-    try { const order = await createWorkOrder(source.kind, source.id, form); go(`/ordens-servico/${order.id}`, true) }
+    try { const order = await createWorkOrder(source.id, form); go(`/ordens-servico/${order.id}`, true) }
     catch (caught) { if (caught instanceof ApiError && Object.keys(caught.errors).length) setErrors(caught.errors); else setError(problem(caught, onSessionExpired, 'Não foi possível criar a OS.')) }
     finally { setPending(false) }
   }
