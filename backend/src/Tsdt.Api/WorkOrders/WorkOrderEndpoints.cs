@@ -115,7 +115,7 @@ public static class WorkOrderEndpoints
             return Error("sourceId", "O contrato precisa conter pelo menos um serviço operacional.");
 
         var previousOrderStatuses = await db.WorkOrders
-            .Where(item => item.OrganizationId == organizationId && item.ContractId == contract.Id)
+            .Where(item => item.OrganizationId == organizationId && (item.ContractId == contract.Id || (item.ContractId == null && item.QuoteId == contract.QuoteId)))
             .Select(item => item.Status)
             .ToListAsync();
         if (!WorkOrderRules.CanCreateFromContract(contract.Status, previousOrderStatuses)) return Duplicate();

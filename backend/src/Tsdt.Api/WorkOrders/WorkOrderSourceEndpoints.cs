@@ -15,7 +15,7 @@ public static class WorkOrderSourceEndpoints
     }
 
     private sealed record SourceRow(Guid Id, Guid QuoteId, string Reference, string CustomerLegalNameSnapshot, string? ServiceAddressSnapshot, string Status, int ServiceCount);
-    private sealed record RelatedOrder(Guid Id, Guid ContractId, string Number, WorkOrderStatus Status);
+    private sealed record RelatedOrder(Guid Id, Guid? ContractId, Guid QuoteId, string Number, WorkOrderStatus Status);
 
     private static async Task<IResult> ListAsync(WorkOrderSourceType? sourceType, string? search, int? page, int? pageSize, HttpContext context, ApplicationDbContext db)
     {
@@ -67,14 +67,15 @@ public static class WorkOrderSourceEndpoints
         if (rows.Count == 0) return [];
 
         var contractIds = rows.Select(item => item.Id).Distinct().ToArray();
+        var quoteIds = rows.Select(item => item.QuoteId).Distinct().ToArray();
         var orders = await db.WorkOrders.AsNoTracking()
-            .Where(item => item.OrganizationId == organizationId && item.ContractId.HasValue && contractIds.Contains(item.ContractId.Value))
-            .Select(item => new RelatedOrder(item.Id, item.ContractId!.Value, item.Number, item.Status))
+            .Where(item => item.OrganizationId == organizationId && ((item.ContractId.HasValue && contractIds.Contains(item.ContractId.Value)) || (!item.ContractId.HasValue && quoteIds.Contains(item.QuoteId))))
+            .Select(item => new RelatedOrder(item.Id, item.ContractId, item.QuoteId, item.Number, item.Status))
             .ToListAsync();
 
         return rows.Select(row =>
         {
-            var contractOrders = orders.Where(item => item.ContractId == row.Id).ToList();
+            var contractOrders = orders.Where(item => item.ContractId == row.Id || (item.ContractId is null && item.QuoteId == row.QuoteId)).ToList();
             var current = contractOrders
                 .Where(item => item.Status is not (WorkOrderStatus.Closed or WorkOrderStatus.Cancelled))
                 .OrderBy(item => item.Id)

@@ -103,17 +103,18 @@ public static class QuoteEndpoints
         quote.ValidUntil = request.ValidUntil;
         quote.ApprovalRecipientName = null;
         quote.ApprovalRecipientEmail = null;
-        db.QuoteApprovalRecipients.RemoveRange(quote.ApprovalRecipients);
-        quote.ApprovalRecipients.Clear();
+        var retained = quote.ApprovalRecipients.Where(item => ids.Contains(item.CustomerContactId)).ToDictionary(item => item.CustomerContactId);
+        var removed = quote.ApprovalRecipients.Where(item => !ids.Contains(item.CustomerContactId)).ToList();
+        db.QuoteApprovalRecipients.RemoveRange(removed);
+        quote.ApprovalRecipients.RemoveAll(item => !ids.Contains(item.CustomerContactId));
         foreach (var contact in contacts)
-            quote.ApprovalRecipients.Add(new QuoteApprovalRecipient
+            if (retained.TryGetValue(contact.Id, out var recipient))
             {
-                QuoteId = quote.Id,
-                CustomerContactId = contact.Id,
-                NameSnapshot = contact.Name,
-                EmailSnapshot = contact.Email!,
-                PhoneSnapshot = contact.Phone
-            });
+                recipient.NameSnapshot = contact.Name;
+                recipient.EmailSnapshot = contact.Email!;
+                recipient.PhoneSnapshot = contact.Phone;
+            }
+            else quote.ApprovalRecipients.Add(new QuoteApprovalRecipient { QuoteId = quote.Id, CustomerContactId = contact.Id, NameSnapshot = contact.Name, EmailSnapshot = contact.Email!, PhoneSnapshot = contact.Phone });
         Touch(quote, Actor(context));
         Audit(db, quote, quote.UpdatedByUserId, "QUOTE_SENT_FOR_APPROVAL", null);
         try { await db.SaveChangesAsync(); return Results.Ok(ToDetail(quote)); }
