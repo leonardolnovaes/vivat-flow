@@ -12,6 +12,7 @@ $frontend = Join-Path $root 'frontend'
 $steps = [ordered]@{
     'Backend Release build' = 'pending'
     'Backend unit tests' = 'pending'
+    'Frontend unit tests' = 'pending'
     'Frontend lint' = 'pending'
     'Frontend production build' = 'pending'
 }
@@ -29,6 +30,7 @@ function Invoke-Step([string]$Name, [scriptblock]$Action) {
         $hint = switch ($Name) {
             'Backend Release build' { ' If the dependency graph changed, run .\scripts\restore.ps1 once.' }
             'Backend unit tests' { ' Inspect the unit-test failure above; do not skip unit tests.' }
+            'Frontend unit tests' { ' Fix the reported frontend unit-test failure.' }
             'Frontend lint' { ' Fix the reported lint diagnostics.' }
             'Frontend production build' { ' Fix the reported TypeScript or Vite diagnostics.' }
         }
@@ -59,6 +61,7 @@ try {
     }
     Push-Location $frontend
     try {
+        Invoke-Step 'Frontend unit tests' { & npm.cmd run test:unit }
         Invoke-Step 'Frontend lint' { & npm.cmd run lint }
         Invoke-Step 'Frontend production build' { & npm.cmd run build }
     }
