@@ -7,9 +7,12 @@ framework:
 
 adoption:
   core_principles: experimental
-  ai_efficiency_review: required
+  ai_efficiency_review:
+    status: experimental
+    policy: required
 
 review:
+  status: experimental
   self_review:
     policy: required-for-meaningful-changes
   independent_review:
@@ -23,7 +26,7 @@ review:
 
 existing_rules:
   evaluation: pending
-  default_cost_assessment: unknown
+  default_cost_assessment: UNKNOWN
   policy:
     - evaluate each existing engineering and AI-assisted workflow rule individually
     - do not assume an existing rule is cheaper because it already exists
