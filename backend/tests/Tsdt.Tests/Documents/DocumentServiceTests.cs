@@ -27,14 +27,15 @@ public sealed class DocumentServiceTests
         Assert.Equal("report.pdf", result.FileName);
         Assert.Equal(fixture.CustomerA.Id, result.CustomerId);
         Assert.Equal(DocumentCategory.Report, result.Category);
+        Assert.Equal(DocumentPurpose.InternalSupporting, result.Purpose);
         Assert.Equal(Pdf.Length, result.SizeBytes);
         Assert.Equal("actor", result.UploadedByUserId);
         Assert.DoesNotContain("storage", string.Join(' ', typeof(DocumentResponse).GetProperties().Select(property => property.Name)), StringComparison.OrdinalIgnoreCase);
         var stored = await fixture.Db.Documents.SingleAsync();
         Assert.NotEqual(Guid.Empty, stored.StorageKey);
         Assert.Single(await fixture.Db.DocumentAuditRecords.Where(audit => audit.DocumentId == result.Id && audit.Action == "DOCUMENT_UPLOADED" && audit.ActorUserId == "actor").ToListAsync());
-        Assert.Equal(result.Id, Assert.Single((await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id)).Items).Id);
-        var download = await fixture.Service.DownloadAsync(fixture.OrganizationA.Id, result.Id);
+        Assert.Equal(result.Id, Assert.Single((await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, "actor", DocumentAccessLevel.Admin)).Items).Id);
+        var download = await fixture.Service.DownloadAsync(fixture.OrganizationA.Id, result.Id, "actor", DocumentAccessLevel.Admin);
         await using var content = download.Content;
         using var bytes = new MemoryStream();
         await content.CopyToAsync(bytes);
@@ -143,11 +144,55 @@ public sealed class DocumentServiceTests
         using var fixture = new Fixture();
         var documentA = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor", fixture.Upload(fixture.CustomerA.Id));
         var documentB = await fixture.Service.UploadAsync(fixture.OrganizationB.Id, "actor-b", fixture.Upload(fixture.CustomerB.Id));
-        Assert.Equal(documentA.Id, Assert.Single((await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id)).Items).Id);
-        Assert.Equal(documentB.Id, Assert.Single((await fixture.Service.ListAsync(fixture.OrganizationB.Id, fixture.CustomerB.Id)).Items).Id);
-        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerB.Id));
-        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.DownloadAsync(fixture.OrganizationA.Id, documentB.Id));
-        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.DownloadAsync(fixture.OrganizationB.Id, documentA.Id));
+        Assert.Equal(documentA.Id, Assert.Single((await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, "actor", DocumentAccessLevel.Admin)).Items).Id);
+        Assert.Equal(documentB.Id, Assert.Single((await fixture.Service.ListAsync(fixture.OrganizationB.Id, fixture.CustomerB.Id, "actor-b", DocumentAccessLevel.Admin)).Items).Id);
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerB.Id, "actor", DocumentAccessLevel.Admin));
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.DownloadAsync(fixture.OrganizationA.Id, documentB.Id, "actor", DocumentAccessLevel.Admin));
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.DownloadAsync(fixture.OrganizationB.Id, documentA.Id, "actor-b", DocumentAccessLevel.Admin));
+    }
+
+    [Fact]
+    public async Task User_reads_only_noncommercial_documents_for_assigned_work_on_active_customers()
+    {
+        using var fixture = new Fixture();
+        var assigned = fixture.AddCompletedOrder(fixture.CustomerA);
+        var other = fixture.AddCompletedOrder(fixture.CustomerA);
+        fixture.Db.Users.AddRange(
+            new ApplicationUser { Id = "assigned-user", UserName = "assigned-user", FullName = "Assigned User", OrganizationId = fixture.OrganizationA.Id },
+            new ApplicationUser { Id = "other-user", UserName = "other-user", FullName = "Other User", OrganizationId = fixture.OrganizationA.Id });
+        assigned.AssignedUserId = "assigned-user";
+        other.AssignedUserId = "other-user";
+        await fixture.Db.SaveChangesAsync();
+
+        var visible = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "manager",
+            fixture.Upload(fixture.CustomerA.Id, DocumentContextType.WorkOrder, assigned.Id) with { Purpose = DocumentPurpose.CustomerDeliverable });
+        var unassigned = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "manager",
+            fixture.Upload(fixture.CustomerA.Id, DocumentContextType.WorkOrder, other.Id));
+        var commercialCategory = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "admin",
+            fixture.Upload(fixture.CustomerA.Id, DocumentContextType.WorkOrder, assigned.Id) with { Category = DocumentCategory.Contract });
+        var commercialContext = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "admin",
+            fixture.Upload(fixture.CustomerA.Id, DocumentContextType.Quote, assigned.QuoteId));
+        var customerWide = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "manager", fixture.Upload(fixture.CustomerA.Id));
+
+        var list = await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, "assigned-user", DocumentAccessLevel.User);
+        Assert.Equal(1, list.TotalCount);
+        Assert.Equal(visible.Id, Assert.Single(list.Items).Id);
+        var download = await fixture.Service.DownloadAsync(fixture.OrganizationA.Id, visible.Id, "assigned-user", DocumentAccessLevel.User);
+        await download.Content.DisposeAsync();
+        foreach (var hidden in new[] { unassigned, commercialCategory, commercialContext, customerWide })
+            await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.DownloadAsync(fixture.OrganizationA.Id, hidden.Id, "assigned-user", DocumentAccessLevel.User));
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, "unassigned-user", DocumentAccessLevel.User));
+
+        var managerList = await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, "manager", DocumentAccessLevel.Manager);
+        Assert.Equal(3, managerList.TotalCount);
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.DownloadAsync(fixture.OrganizationA.Id, commercialCategory.Id, "manager", DocumentAccessLevel.Manager));
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.DownloadAsync(fixture.OrganizationA.Id, commercialContext.Id, "manager", DocumentAccessLevel.Manager));
+
+        fixture.CustomerA.IsActive = false;
+        await fixture.Db.SaveChangesAsync();
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, "assigned-user", DocumentAccessLevel.User));
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.DownloadAsync(fixture.OrganizationA.Id, visible.Id, "assigned-user", DocumentAccessLevel.User));
+        Assert.Equal(5, (await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, "admin", DocumentAccessLevel.Admin)).TotalCount);
     }
 
     private sealed class Fixture : IDisposable
@@ -180,7 +225,7 @@ public sealed class DocumentServiceTests
             string fileName = "report.pdf", string contentType = "application/pdf", byte[]? bytes = null)
         {
             var content = bytes ?? Pdf;
-            return new DocumentUpload(customerId, DocumentCategory.Report, "Relatório", type, contextId,
+            return new DocumentUpload(customerId, DocumentCategory.Report, DocumentPurpose.InternalSupporting, "Relatório", type, contextId,
                 fileName, contentType, content.Length, new MemoryStream(content));
         }
 

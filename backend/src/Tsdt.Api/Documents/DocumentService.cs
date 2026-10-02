@@ -4,7 +4,7 @@ using Tsdt.Api.Identity;
 
 namespace Tsdt.Api.Documents;
 
-public sealed record DocumentUpload(Guid CustomerId, DocumentCategory Category, string? Description,
+public sealed record DocumentUpload(Guid CustomerId, DocumentCategory Category, DocumentPurpose Purpose, string? Description,
     DocumentContextType? ContextType, Guid? ContextId, string FileName, string? ContentType,
     long DeclaredLength, Stream Content);
 
@@ -13,13 +13,14 @@ public sealed class DocumentService(ApplicationDbContext db, IDocumentStorage st
     public async Task<DocumentResponse> UploadAsync(Guid organizationId, string actor, DocumentUpload upload, CancellationToken cancellationToken = default)
     {
         if (!Enum.IsDefined(upload.Category)) throw new DocumentValidationException("category", "Selecione uma categoria válida.");
+        if (!Enum.IsDefined(upload.Purpose)) throw new DocumentValidationException("purpose", "Selecione uma finalidade válida.");
         if (upload.ContextType.HasValue != upload.ContextId.HasValue ||
             upload.ContextType is { } contextType && !Enum.IsDefined(contextType))
             throw new DocumentValidationException("contextType", "Informe um contexto válido ou deixe os dois campos vazios.");
         if (upload.Description?.Trim().Length > 1000) throw new DocumentValidationException("description", "Use no máximo 1.000 caracteres na descrição.");
         if (upload.DeclaredLength <= 0) throw new DocumentValidationException("file", "Selecione um arquivo não vazio.");
         var limit = options.Value.MaxFileSizeBytes;
-        if (limit <= 0) throw new InvalidOperationException("DocumentStorage:MaxFileSizeBytes must be positive.");
+        DocumentStorageOptions.ValidateMaxFileSize(limit);
         if (upload.DeclaredLength > limit) throw new DocumentValidationException("file", "O arquivo excede o limite de tamanho permitido.");
         var fileName = DocumentFilePolicy.SanitizeFileName(upload.FileName);
 
@@ -42,7 +43,7 @@ public sealed class DocumentService(ApplicationDbContext db, IDocumentStorage st
         var now = DateTimeOffset.UtcNow;
         var document = new DocumentRecord { Id = Guid.NewGuid(), OrganizationId = organizationId, CustomerId = upload.CustomerId,
             OriginalFileName = fileName, StorageKey = Guid.NewGuid(), ContentType = contentType, SizeBytes = content.Length,
-            Category = upload.Category, Description = string.IsNullOrWhiteSpace(upload.Description) ? null : upload.Description.Trim(),
+            Category = upload.Category, Purpose = upload.Purpose, Description = string.IsNullOrWhiteSpace(upload.Description) ? null : upload.Description.Trim(),
             ContextType = upload.ContextType, ContextId = upload.ContextId, UploadedAtUtc = now, UploadedByUserId = actor };
         var stored = false;
         try
@@ -63,12 +64,14 @@ public sealed class DocumentService(ApplicationDbContext db, IDocumentStorage st
         return Response(document);
     }
 
-    public async Task<DocumentListResponse> ListAsync(Guid organizationId, Guid customerId, int page = 1, int pageSize = 25, CancellationToken cancellationToken = default)
+    public async Task<DocumentListResponse> ListAsync(Guid organizationId, Guid customerId, string actor, DocumentAccessLevel access, int page = 1, int pageSize = 25, CancellationToken cancellationToken = default)
     {
-        if (!await db.Customers.AnyAsync(customer => customer.Id == customerId && customer.OrganizationId == organizationId, cancellationToken))
+        if (!await db.Customers.AnyAsync(customer => customer.Id == customerId && customer.OrganizationId == organizationId &&
+            (access != DocumentAccessLevel.User || customer.IsActive && db.WorkOrders.Any(order => order.OrganizationId == organizationId && order.CustomerId == customerId && order.AssignedUserId == actor)), cancellationToken))
             throw new DocumentNotFoundException();
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 100);
         var query = db.Documents.AsNoTracking().Where(document => document.OrganizationId == organizationId && document.CustomerId == customerId);
+        query = VisibleToReader(query, organizationId, actor, access);
         var total = await query.CountAsync(cancellationToken);
         var offset = ((long)page - 1) * pageSize;
         if (offset > int.MaxValue) return new DocumentListResponse([], page, pageSize, total);
@@ -78,12 +81,27 @@ public sealed class DocumentService(ApplicationDbContext db, IDocumentStorage st
         return new DocumentListResponse(documents.Select(Response).ToList(), page, pageSize, total);
     }
 
-    public async Task<DocumentDownload> DownloadAsync(Guid organizationId, Guid documentId, CancellationToken cancellationToken = default)
+    public async Task<DocumentDownload> DownloadAsync(Guid organizationId, Guid documentId, string actor, DocumentAccessLevel access, CancellationToken cancellationToken = default)
     {
-        var document = await db.Documents.AsNoTracking().SingleOrDefaultAsync(item => item.Id == documentId && item.OrganizationId == organizationId, cancellationToken)
+        var query = db.Documents.AsNoTracking().Where(item => item.Id == documentId && item.OrganizationId == organizationId);
+        query = VisibleToReader(query, organizationId, actor, access);
+        var document = await query.SingleOrDefaultAsync(cancellationToken)
             ?? throw new DocumentNotFoundException();
         var content = await storage.OpenReadAsync(organizationId, document.StorageKey, cancellationToken);
         return new DocumentDownload(content, document.ContentType, document.OriginalFileName);
+    }
+
+    private IQueryable<DocumentRecord> VisibleToReader(IQueryable<DocumentRecord> query, Guid organizationId, string actor, DocumentAccessLevel access)
+    {
+        if (access == DocumentAccessLevel.Admin) return query;
+        query = query.Where(document => document.ContextType != DocumentContextType.Quote &&
+            document.ContextType != DocumentContextType.Contract &&
+            document.Category != DocumentCategory.Contract && document.Category != DocumentCategory.SignedDocument);
+        if (access == DocumentAccessLevel.Manager) return query;
+        return query.Where(document => document.ContextType == DocumentContextType.WorkOrder &&
+            db.Customers.Any(customer => customer.Id == document.CustomerId && customer.OrganizationId == organizationId && customer.IsActive) &&
+            db.WorkOrders.Any(order => order.Id == document.ContextId && order.OrganizationId == organizationId &&
+                order.CustomerId == document.CustomerId && order.AssignedUserId == actor));
     }
 
     private async Task<bool> ContextBelongsToCustomerAsync(Guid organizationId, Guid customerId, DocumentContextType? type, Guid? id, CancellationToken cancellationToken)
@@ -101,6 +119,6 @@ public sealed class DocumentService(ApplicationDbContext db, IDocumentStorage st
     }
 
     private static DocumentResponse Response(DocumentRecord document) => new(document.Id, document.CustomerId, document.OriginalFileName,
-        document.ContentType, document.SizeBytes, document.Category, document.Description, document.ContextType,
+        document.ContentType, document.SizeBytes, document.Category, document.Purpose, document.Description, document.ContextType,
         document.ContextId, document.UploadedAtUtc, document.UploadedByUserId);
 }

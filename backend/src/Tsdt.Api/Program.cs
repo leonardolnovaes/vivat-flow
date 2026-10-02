@@ -32,7 +32,8 @@ builder.Services.Configure<BootstrapAdminOptions>(builder.Configuration.GetSecti
 builder.Services.Configure<OrganizationBootstrapOptions>(builder.Configuration.GetSection(OrganizationBootstrapOptions.SectionName));
 builder.Services.Configure<PlatformBootstrapAdminOptions>(builder.Configuration.GetSection(PlatformBootstrapAdminOptions.SectionName));
 builder.Services.Configure<DocumentStorageOptions>(builder.Configuration.GetSection(DocumentStorageOptions.SectionName));
-builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = builder.Configuration.GetValue<long?>("DocumentStorage:MaxFileSizeBytes") ?? 10 * 1024 * 1024);
+var documentMaxFileSize = DocumentStorageOptions.ValidateMaxFileSize(builder.Configuration.GetValue<long?>("DocumentStorage:MaxFileSizeBytes") ?? 10 * 1024 * 1024);
+builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = documentMaxFileSize + 1024 * 1024);
 builder.Services.AddSingleton<IDocumentStorage, LocalDocumentStorage>();
 builder.Services.AddScoped<DocumentService>();
 builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
@@ -74,6 +75,8 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AuthorizationPolicies.CommercialAdmin, policy => policy.RequireRole(IdentityRoles.Admin));
     options.AddPolicy(AuthorizationPolicies.WorkOrderManagement, policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager).RequireAssertion(context => context.User.FindFirst("platform_administrator")?.Value != "true"));
     options.AddPolicy(AuthorizationPolicies.WorkOrderExecution, policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager, IdentityRoles.User).RequireAssertion(context => context.User.FindFirst("platform_administrator")?.Value != "true"));
+    options.AddPolicy(AuthorizationPolicies.DocumentManagement, policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager).RequireAssertion(context => context.User.FindFirst("platform_administrator")?.Value != "true"));
+    options.AddPolicy(AuthorizationPolicies.DocumentRead, policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager, IdentityRoles.User).RequireAssertion(context => context.User.FindFirst("platform_administrator")?.Value != "true"));
     options.AddPolicy(AuthorizationPolicies.PlatformAdministrator, policy => policy.RequireClaim("platform_administrator", "true"));
 });
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>

@@ -253,6 +253,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(document => document.ContentType).IsRequired().HasMaxLength(100);
             entity.Property(document => document.Description).HasMaxLength(1000);
             entity.Property(document => document.Category).HasConversion<string>().HasMaxLength(32);
+            entity.Property(document => document.Purpose).HasConversion<string>().HasMaxLength(32);
             entity.Property(document => document.ContextType).HasConversion<string>().HasMaxLength(32);
             entity.Property(document => document.UploadedByUserId).IsRequired();
             entity.HasIndex(document => new { document.OrganizationId, document.CustomerId, document.UploadedAtUtc });

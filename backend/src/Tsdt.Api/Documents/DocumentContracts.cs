@@ -1,7 +1,7 @@
 namespace Tsdt.Api.Documents;
 
 public sealed record DocumentResponse(Guid Id, Guid CustomerId, string FileName, string ContentType, long SizeBytes,
-    DocumentCategory Category, string? Description, DocumentContextType? ContextType, Guid? ContextId,
+    DocumentCategory Category, DocumentPurpose Purpose, string? Description, DocumentContextType? ContextType, Guid? ContextId,
     DateTimeOffset UploadedAtUtc, string UploadedByUserId);
 
 public sealed record DocumentListResponse(IReadOnlyList<DocumentResponse> Items, int Page, int PageSize, int TotalCount);

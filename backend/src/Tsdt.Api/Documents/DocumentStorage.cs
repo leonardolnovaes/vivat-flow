@@ -5,8 +5,12 @@ namespace Tsdt.Api.Documents;
 public sealed class DocumentStorageOptions
 {
     public const string SectionName = "DocumentStorage";
+    public const long MaximumSupportedFileSizeBytes = 20 * 1024 * 1024;
     public required string RootPath { get; set; }
     public long MaxFileSizeBytes { get; set; } = 10 * 1024 * 1024;
+
+    public static long ValidateMaxFileSize(long value) => value is > 0 and <= MaximumSupportedFileSizeBytes
+        ? value : throw new InvalidOperationException($"DocumentStorage:MaxFileSizeBytes must be between 1 and {MaximumSupportedFileSizeBytes} bytes.");
 }
 
 public interface IDocumentStorage

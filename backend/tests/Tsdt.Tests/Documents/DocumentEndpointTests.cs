@@ -39,6 +39,7 @@ public sealed class DocumentEndpointTests
 
         using var multipart = new MultipartFormDataContent();
         multipart.Add(new StringContent("Report"), "category");
+        multipart.Add(new StringContent("CustomerDeliverable"), "purpose");
         var file = new ByteArrayContent(Encoding.ASCII.GetBytes("%PDF-1.7\nexample"));
         file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
         multipart.Add(file, "file", @"folder\report.pdf");
@@ -49,6 +50,7 @@ public sealed class DocumentEndpointTests
         var responseBody = await response.Content.ReadAsStringAsync();
         var document = JsonSerializer.Deserialize<DocumentResponse>(responseBody, Json)!;
         Assert.Equal("report.pdf", document.FileName);
+        Assert.Equal(DocumentPurpose.CustomerDeliverable, document.Purpose);
         Assert.DoesNotContain("storageKey", responseBody, StringComparison.OrdinalIgnoreCase);
 
         var list = (await client.GetFromJsonAsync<DocumentListResponse>($"/api/customers/{customer.Id}/documents", Json))!;
@@ -62,7 +64,7 @@ public sealed class DocumentEndpointTests
     }
 
     [Fact]
-    public async Task Tenant_user_can_read_but_cannot_upload()
+    public async Task Tenant_user_without_assigned_work_cannot_read_or_upload()
     {
         using var baseFactory = new IdentityWebApplicationFactory();
         var storage = new TestDocumentStorage();
@@ -88,13 +90,48 @@ public sealed class DocumentEndpointTests
         }
         using var userClient = CreateClient(factory);
         (await IdentityTestClient.LoginAsync(userClient, "document-user@example.test", "Userpass1!Password")).EnsureSuccessStatusCode();
-        Assert.Equal(HttpStatusCode.OK, (await userClient.GetAsync($"/api/customers/{customer.Id}/documents")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await userClient.GetAsync($"/api/customers/{customer.Id}/documents")).StatusCode);
         using var multipart = new MultipartFormDataContent();
         multipart.Add(new StringContent("Report"), "category");
         multipart.Add(new ByteArrayContent("%PDF-1.7"u8.ToArray()), "file", "report.pdf");
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/customers/{customer.Id}/documents") { Content = multipart };
         request.Headers.Add("X-CSRF-TOKEN", await IdentityTestClient.GetCsrfTokenAsync(userClient));
         Assert.Equal(HttpStatusCode.Forbidden, (await userClient.SendAsync(request)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Manager_cannot_upload_commercial_documents()
+    {
+        using var factory = new IdentityWebApplicationFactory();
+        using var bootstrap = CreateClient(factory);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var administrator = await users.FindByEmailAsync("admin@example.test");
+            var manager = new ApplicationUser { FullName = "Document Manager", UserName = "document-manager@example.test",
+                Email = "document-manager@example.test", EmailConfirmed = true, IsActive = true,
+                MustChangePassword = false, OrganizationId = administrator!.OrganizationId };
+            Assert.True((await users.CreateAsync(manager, "Manager1!Password")).Succeeded);
+            Assert.True((await users.AddToRoleAsync(manager, IdentityRoles.Manager)).Succeeded);
+        }
+        using var client = CreateClient(factory);
+        (await IdentityTestClient.LoginAsync(client, "document-manager@example.test", "Manager1!Password")).EnsureSuccessStatusCode();
+        var csrf = await IdentityTestClient.GetCsrfTokenAsync(client);
+        foreach (var (category, contextType) in new[] { ("Contract", ""), ("Report", "Quote") })
+        {
+            using var multipart = new MultipartFormDataContent();
+            multipart.Add(new StringContent(category), "category");
+            multipart.Add(new StringContent("InternalSupporting"), "purpose");
+            if (contextType.Length > 0)
+            {
+                multipart.Add(new StringContent(contextType), "contextType");
+                multipart.Add(new StringContent(Guid.NewGuid().ToString()), "contextId");
+            }
+            multipart.Add(new ByteArrayContent("%PDF-1.7"u8.ToArray()), "file", "report.pdf");
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/customers/{Guid.NewGuid()}/documents") { Content = multipart };
+            request.Headers.Add("X-CSRF-TOKEN", csrf);
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.SendAsync(request)).StatusCode);
+        }
     }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory) => factory.CreateClient(new WebApplicationFactoryClientOptions
