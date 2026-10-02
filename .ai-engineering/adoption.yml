@@ -20,7 +20,7 @@ review:
     topology:
       codex: chatgpt
       chatgpt: codex
-      other: user-selected-independent-reviewer
+      other: user-selected-independent-ai-reviewer
     unavailable: pending
   final_merge: user
 
