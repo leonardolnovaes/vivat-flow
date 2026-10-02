@@ -14,7 +14,7 @@
 
 ## AI Engineering adoption
 
-Vivat Flow adopts the AI Engineering operating model pinned in `.ai-engineering/adoption.yml`. The external framework defines reusable mechanisms and evidence discipline; this repository owns the operational policy.
+Vivat Flow adopts AI Engineering principles through its local `.ai-engineering/adoption.yml`. AI Engineering defines reusable mechanisms and evidence discipline; this repository owns the operational policy.
 
 - Existing Vivat Flow engineering, validation, Git, security, QA, and runtime rules remain authoritative until each rule is evaluated individually. Do not assume an existing rule is cheaper, more expensive, or obsolete merely because it already exists.
 - Apply the AI Engineering quality non-regression guardrail: cost optimizations are acceptable only when required quality is preserved or improved.
@@ -24,7 +24,7 @@ Vivat Flow adopts the AI Engineering operating model pinned in `.ai-engineering/
   - ChatGPT implementation -> Codex independent AI review.
   - Another implementer -> an independent AI reviewer selected by the user/project policy.
 - If the designated independent AI reviewer is unavailable, mark independent review as pending. Do not silently substitute the implementer's self-review.
-- The independent AI reviewer must perform both the normal technical review and the AI Engineering efficiency review using the pinned framework review protocol, including its cost-aware review behavior.
+- The independent AI reviewer must perform both the normal technical review and the AI Engineering efficiency review using the AI Engineering review protocol, including its cost-aware review behavior.
 - This cross-agent topology is `EXPERIMENTAL`: measure its review escapes, retries, validation cost, and useful findings. Revisit it when evidence or tooling changes; do not treat it as permanent.
 - The user remains the final decision-maker and performs the merge manually.
 
