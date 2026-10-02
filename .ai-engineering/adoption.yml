@@ -26,10 +26,8 @@ existing_rules:
   evaluation: pending
   default_cost_assessment: UNKNOWN
   policy:
-    - evaluate each existing engineering and AI-assisted workflow rule individually
-    - do not assume an existing rule is cheaper because it already exists
-    - apply the AI Engineering quality non-regression guardrail while measuring cost
-    - promote reusable findings only when evidence supports broader scope
+    - evaluate each existing local engineering and AI-assisted workflow rule individually
+    - do not assume an existing local rule is cheaper because it already exists
 
 boundaries:
   runtime_dependency_on_ai_engineering: false
