@@ -1,0 +1,45 @@
+# Project-owned progressive disclosure map. Paths are repository-relative.
+schema_version: 1
+
+always:
+  read: []
+
+routes:
+  repository-change:
+    when: Any repository file change or review of a repository change, including documentation and test-only work.
+    read:
+      - .ai-engineering/change-policy.md
+
+  architecture:
+    when: Architecture, technical boundaries, or module structure changes.
+    read:
+      - docs/ARCHITECTURE.md
+
+  product-scope:
+    when: Product scope, domain concepts, or business model changes.
+    read:
+      - docs/PRODUCT_MODEL.md
+      - docs/MVP.md
+
+  frontend:
+    when: New frontend screen or meaningful frontend change, including visual and manual QA.
+    read:
+      - docs/FRONTEND_STANDARDS.md
+
+  development-setup:
+    when: Workstation setup, dependency installation, or local development tooling.
+    read:
+      - docs/SETUP.md
+
+  runtime:
+    when: Starting, restarting, stopping, exposing, promoting, or validating an application environment, or completing a meaningful functional change that requires manual QA.
+    read:
+      - docs/ENVIRONMENTS.md
+
+  pull-request-handoff:
+    when: Preparing, opening, or updating a pull request.
+    read:
+      - .github/pull_request_template.md
+
+fallback:
+  behavior: Inspect the minimum local context needed to classify the task, then expand deliberately when uncertainty or risk requires it. Do not preload every route.

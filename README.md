@@ -19,7 +19,7 @@ The current technical namespace and solution still use the historical `Tsdt` nam
 
 ## Development workflow
 
-Repository-changing work follows the mandatory workflow in [AGENTS.md](AGENTS.md): create a task branch before editing, implement and validate proportionally, commit, push, open a PR to `main`, then stop for ChatGPT review and user final merge.
+Repository-changing work follows the [bootstrap](AGENTS.md) and [routed change policy](.ai-engineering/change-policy.md): create a task branch before editing, implement and validate proportionally, commit, push, open a PR to `main`, then stop for ChatGPT review and user final merge.
 
 DEV and DEMO are isolated. Standard DEV uses:
 

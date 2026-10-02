@@ -7,9 +7,12 @@ framework:
   source:
     provider: github
     repository: leonardolnovaes/ai-engineering
-    ref: d00a716bd761c50113c9ec8b05f39f56225b7792
+    ref: 6f1823e63e0364c26f3ffdf905c54722db93355f
     consumer_protocol: CONSUMER_PROTOCOL.md
     rule_registry: RULES.json
+
+context_routing:
+  manifest: .ai-engineering/context-routing.yml
 
 rules:
   default: enabled
