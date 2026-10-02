@@ -3,14 +3,14 @@
 framework: ai-engineering
 schema_version: 1
 
-adoption:
-  core_principles: experimental
-  ai_efficiency_review:
-    status: experimental
-    policy: required
+rules:
+  default: enabled
+  overrides: {}
 
 review:
   status: experimental
+  ai_efficiency_review:
+    policy: required
   self_review:
     policy: required-for-meaningful-changes
   independent_review:
