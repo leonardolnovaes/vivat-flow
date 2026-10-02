@@ -1,6 +1,6 @@
 # Project-owned AI Engineering adoption manifest.
 # This file is declarative documentation for Vivat Flow; no runtime parser is required.
-schema_version: 2
+schema_version: 3
 
 framework:
   id: ai-engineering
