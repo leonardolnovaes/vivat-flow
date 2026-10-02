@@ -195,6 +195,34 @@ public sealed class DocumentServiceTests
         Assert.Equal(5, (await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, "admin", DocumentAccessLevel.Admin)).TotalCount);
     }
 
+    [Fact]
+    public async Task ContextProjectionIsCustomerScopedAndRoleFiltered()
+    {
+        using var fixture = new Fixture();
+        var ownOrder = fixture.AddCompletedOrder(fixture.CustomerA);
+        var otherOrder = fixture.AddCompletedOrder(fixture.CustomerA2);
+        var foreignOrder = fixture.AddCompletedOrder(fixture.CustomerB);
+        var document = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor",
+            fixture.Upload(fixture.CustomerA.Id, DocumentContextType.WorkOrder, ownOrder.Id));
+
+        var listed = Assert.Single((await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, "actor", DocumentAccessLevel.Manager)).Items);
+        Assert.Equal(document.Id, listed.Id);
+        Assert.Equal("OS " + ownOrder.Number, listed.ContextLabel);
+        Assert.Equal("Usuário indisponível", listed.UploadedByName);
+
+        var manager = await fixture.Service.ContextOptionsAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, DocumentAccessLevel.Manager);
+        Assert.Contains(manager, option => option.Type == DocumentContextType.Customer && option.Id == fixture.CustomerA.Id);
+        Assert.Contains(manager, option => option.Type == DocumentContextType.WorkOrder && option.Id == ownOrder.Id);
+        Assert.DoesNotContain(manager, option => option.Type is DocumentContextType.Quote or DocumentContextType.Contract);
+        Assert.DoesNotContain(manager, option => option.Id == otherOrder.Id || option.Id == foreignOrder.Id);
+
+        var admin = await fixture.Service.ContextOptionsAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, DocumentAccessLevel.Admin);
+        Assert.Contains(admin, option => option.Type == DocumentContextType.Quote && option.Id == ownOrder.QuoteId);
+        Assert.Contains(admin, option => option.Type == DocumentContextType.Contract && option.Id == ownOrder.ContractId);
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.ContextOptionsAsync(fixture.OrganizationA.Id, fixture.CustomerB.Id, DocumentAccessLevel.Admin));
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.ContextOptionsAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, DocumentAccessLevel.User));
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly SqliteConnection connection = new("Data Source=:memory:");

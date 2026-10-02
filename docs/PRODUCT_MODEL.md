@@ -89,7 +89,7 @@ ADMIN/MANAGER see their Organization's entries and may filter by professional. U
 
 Every Document belongs to exactly one Customer within one Organization. It may also identify one validated Customer, Customer Unit, Quote, Contract, or Work Order context owned by that same Customer and Organization. A Document is independent of Work Order transitions: completed Work Orders may receive documents later, and completion never requires an attachment.
 
-The first phase provides upload, customer-scoped metadata listing, and authorized download. Metadata and upload audit are stored in PostgreSQL; file bytes are held in private storage under generated identifiers. No document UI, deletion, versioning, cloud provider, or extracted-content search is part of this phase.
+The first phase provides upload, customer-scoped metadata listing in Customer detail, and authorized download. Metadata and upload audit are stored in PostgreSQL; file bytes are held in private storage under generated identifiers. No global Document Center, deletion, versioning, cloud provider, or extracted-content search is part of this phase.
 
 ## Historical integrity
 

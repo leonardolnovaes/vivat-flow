@@ -55,6 +55,9 @@ public sealed class DocumentEndpointTests
 
         var list = (await client.GetFromJsonAsync<DocumentListResponse>($"/api/customers/{customer.Id}/documents", Json))!;
         Assert.Equal(document.Id, Assert.Single(list.Items).Id);
+        Assert.Equal("Cliente", Assert.Single(list.Items).ContextLabel);
+        var contexts = (await client.GetFromJsonAsync<List<DocumentContextOption>>($"/api/customers/{customer.Id}/documents/contexts", Json))!;
+        Assert.Contains(contexts, option => option.Type == DocumentContextType.Customer && option.Id == customer.Id);
         using var download = await client.GetAsync($"/api/documents/{document.Id}/download");
         Assert.Equal(HttpStatusCode.OK, download.StatusCode);
         Assert.Equal("attachment", download.Content.Headers.ContentDisposition?.DispositionType);
@@ -91,6 +94,7 @@ public sealed class DocumentEndpointTests
         using var userClient = CreateClient(factory);
         (await IdentityTestClient.LoginAsync(userClient, "document-user@example.test", "Userpass1!Password")).EnsureSuccessStatusCode();
         Assert.Equal(HttpStatusCode.NotFound, (await userClient.GetAsync($"/api/customers/{customer.Id}/documents")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await userClient.GetAsync($"/api/customers/{customer.Id}/documents/contexts")).StatusCode);
         using var multipart = new MultipartFormDataContent();
         multipart.Add(new StringContent("Report"), "category");
         multipart.Add(new ByteArrayContent("%PDF-1.7"u8.ToArray()), "file", "report.pdf");

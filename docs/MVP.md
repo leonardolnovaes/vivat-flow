@@ -44,7 +44,7 @@ The intended permission direction is phase-aware: management owns commercial/for
 
 ## Documents and delivery
 
-The first Documents phase stores customer-owned metadata and optional business context in PostgreSQL and binary content through private local storage configured for the current deployment. The storage interface permits a later cloud provider without changing the document model. Upload, customer list, and authorized download are backend-only in this phase; contextual UI, customer document aggregation UI, search, versioning, and removal are future work.
+The first Documents phase stores customer-owned metadata and optional business context in PostgreSQL and binary content through private local storage configured for the current deployment. The storage interface permits a later cloud provider without changing the document model. Customer detail provides a scoped document list, upload, and authorized download. Search, versioning, and removal are future work.
 
 Documents distinguish customer deliverables from internal/supporting files.
 
