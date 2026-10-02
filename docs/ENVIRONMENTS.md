@@ -12,7 +12,19 @@ DEV is the active, changeable development workspace.
 - Database: `vivatflow_dev`
 - Command: `./scripts/start-local.ps1`
 
-DEV uses the current working tree and may change during development. It never changes DEMO processes or the `tsdt` database.
+DEV uses the current working tree and may change during development. It never changes DEMO processes or the `tsdt` database. DEV and DEMO may share the PostgreSQL instance on port `5432`, but must never share a logical database. Normal local work uses DEV; promotion to DEMO is an explicit operation after QA through `./scripts/start-demo.ps1`. DEV is never exposed through Cloudflare.
+
+### Local startup and manual validation
+
+When asked to start or run DEV, or to run the application for local development or manual validation, use `./scripts/start-local.ps1` to start the complete DEV environment for browser validation. Explicit DEMO requests follow the DEMO section below. Start the repository Docker Compose dependencies, PostgreSQL, backend API, and frontend development server as required. Verify that the API health endpoint responds and the frontend is reachable. Report the exact frontend, API, and health-check URLs. Identify only intended local development accounts when applicable; never expose passwords or other secrets.
+
+Keep the environment running for manual validation. Do not stop it after checking startup or validation; stop processes only when the user explicitly asks. When Docker is running and the local application environment has been started, keep that localhost environment running until the user asks to stop it.
+
+After a meaningful functional change, proactively start or restart DEV so the user can validate it in the browser. This includes frontend UI or UX changes, authentication or authorization changes, new or modified application flows, API behavior changes, backend changes affecting visible behavior, and configuration or database changes affecting runtime behavior. Documentation-only changes, comments, formatting, and other changes that cannot affect runtime behavior do not require proactive startup. After a runtime-relevant change, state in the final response that the application is available and provide the URLs needed for manual validation.
+
+Reuse an already healthy environment when possible and restart only affected services. Use `./scripts/start-local.ps1` with `-BackendOnly`, `-FrontendOnly`, or `-Restart` as appropriate; do not create duplicate instances on arbitrary ports. The script checks the listener owner and `/health`, reuses a healthy TSDT process, refuses a port occupied by another process, starts hidden processes, and writes logs under `.local/logs`. A restart must stop the project-owned process and wait for its port to be released before starting a replacement.
+
+After meaningful application code changes, rebuild or update every affected local Docker image before runtime validation. If application services are defined in Docker Compose, use those updated images for local validation. Compose currently provides PostgreSQL only; do not introduce application containers solely for this rule. Apply the application-image rebuild requirement when application images exist.
 
 ## DEMO
 
@@ -23,6 +35,8 @@ DEMO is the persistent client-facing environment. Its data is valuable and survi
 - Health: `https://localhost:7226/health`
 - Database: `tsdt`
 - Command: `./scripts/start-demo.ps1 -Ref main`
+
+Never run `dotnet run` or `npm run dev` directly against DEMO ports `7226` or `5173` without first using `./scripts/start-demo.ps1`.
 
 `-Ref` resolves a committed revision. For the canonical `-Ref main` command, the script refreshes and deploys `origin/main`; other refs resolve locally as explicitly supplied. The script runs the revision from the persistent local worktree at `.local/demo/worktree`, rather than from the active DEV working tree. When the revision changes, it stops the owned DEMO frontend/API before changing that worktree. The deployed SHA is recorded at `.local/demo/deployed-sha.txt` only after both services and the unauthenticated-authentication check succeed.
 
