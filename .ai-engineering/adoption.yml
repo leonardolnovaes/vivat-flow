@@ -1,10 +1,7 @@
 # Project-owned AI Engineering adoption manifest.
 # This file is declarative documentation for Vivat Flow; no runtime parser is required.
-framework:
-  repository: leonardolnovaes/ai-engineering
-  revision: e5e15e79e13789d5a93ab1d7581086e990bd9f92
-  revision_status: pending-ai-engineering-pr-2
-  schema_version: 1
+framework: ai-engineering
+schema_version: 1
 
 adoption:
   core_principles: experimental
