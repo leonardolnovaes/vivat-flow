@@ -13,4 +13,4 @@ Write-Host 'Restoring backend packages once. NuGet may use locally cached packag
 if ($LASTEXITCODE -ne 0) {
     throw 'Restore failed. Check package source availability and package cache. No signature or vulnerability checks were disabled.'
 }
-Write-Host 'Backend restore complete. Run .\scripts\validate.ps1.'
+Write-Host 'Backend restore complete.'

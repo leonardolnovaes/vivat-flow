@@ -19,7 +19,7 @@ The current technical namespace and solution still use the historical `Tsdt` nam
 
 ## Development workflow
 
-Repository-changing work follows the mandatory workflow in [AGENTS.md](AGENTS.md): create a task branch before editing, implement and validate proportionally, commit, push, open a PR to `main`, then stop for ChatGPT review and user final merge.
+Repository-changing work follows the [bootstrap](AGENTS.md) and [context routes](.ai-engineering/context-routing.yml): create a task branch before editing, implement and validate proportionally, commit, push, open a PR to `main`, then stop for independent review and user final merge.
 
 DEV and DEMO are isolated. Standard DEV uses:
 
@@ -28,7 +28,7 @@ DEV and DEMO are isolated. Standard DEV uses:
 - Health: `https://localhost:7227/health`
 - Database: `vivatflow_dev`
 
-See [Development setup](docs/SETUP.md) and the canonical [runtime environment contract](docs/ENVIRONMENTS.md) for the complete local workflow.
+See [Development setup](docs/SETUP.md) for first-time prerequisites and bootstrap. Follow the canonical [runtime environment contract](docs/ENVIRONMENTS.md) to operate DEV, DEMO, or PREVIEW.
 
 ## Documentation
 
