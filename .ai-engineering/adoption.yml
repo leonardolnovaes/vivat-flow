@@ -1,0 +1,36 @@
+# Project-owned AI Engineering adoption manifest.
+# This file is declarative documentation for Vivat Flow; no runtime parser is required.
+framework: ai-engineering
+schema_version: 1
+
+rules:
+  default: enabled
+  overrides: {}
+
+review:
+  status: experimental
+  ai_efficiency_review:
+    policy: required
+  self_review:
+    policy: required-for-meaningful-changes
+  independent_review:
+    policy: required
+    topology:
+      codex: chatgpt
+      chatgpt: codex
+      other: user-selected-independent-ai-reviewer
+    unavailable: pending
+  final_merge: user
+
+existing_rules:
+  evaluation: pending
+  default_cost_assessment: UNKNOWN
+  policy:
+    - evaluate each existing local engineering and AI-assisted workflow rule individually
+    - do not assume an existing local rule is cheaper because it already exists
+
+boundaries:
+  runtime_dependency_on_ai_engineering: false
+  project_specific_rules_remain_in_vivat_flow: true
+  private_project_evidence_remains_in_vivat_flow: true
+  reviewer_and_vendor_choices_remain_in_vivat_flow: true

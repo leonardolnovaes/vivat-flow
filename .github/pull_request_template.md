@@ -27,5 +27,10 @@
 
 - Branch:
 - Latest commit:
-- Ready for ChatGPT review: yes/no
+- Implementing agent:
+- Designated independent AI reviewer:
+- Implementer self-review completed: yes/no
+- Ready for independent AI review: yes/no
+- AI Engineering efficiency review required: yes
+- Review cost trace: files/diffs inspected; extra tool executions; retries; direct token/credit usage if exposed, otherwise `UNKNOWN`
 - Ready for merge: no
