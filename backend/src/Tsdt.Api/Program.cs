@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
@@ -12,6 +13,7 @@ using Tsdt.Api.Quotes;
 using Tsdt.Api.Platform;
 using Tsdt.Api.Contracts;
 using Tsdt.Api.WorkOrders;
+using Tsdt.Api.Documents;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -29,6 +31,11 @@ if (builder.Environment.IsEnvironment("Testing"))
 builder.Services.Configure<BootstrapAdminOptions>(builder.Configuration.GetSection(BootstrapAdminOptions.SectionName));
 builder.Services.Configure<OrganizationBootstrapOptions>(builder.Configuration.GetSection(OrganizationBootstrapOptions.SectionName));
 builder.Services.Configure<PlatformBootstrapAdminOptions>(builder.Configuration.GetSection(PlatformBootstrapAdminOptions.SectionName));
+builder.Services.Configure<DocumentStorageOptions>(builder.Configuration.GetSection(DocumentStorageOptions.SectionName));
+var documentMaxFileSize = DocumentStorageOptions.ValidateMaxFileSize(builder.Configuration.GetValue<long?>("DocumentStorage:MaxFileSizeBytes") ?? 10 * 1024 * 1024);
+builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = documentMaxFileSize + 1024 * 1024);
+builder.Services.AddSingleton<IDocumentStorage, LocalDocumentStorage>();
+builder.Services.AddScoped<DocumentService>();
 builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 {
     options.User.RequireUniqueEmail = true;
@@ -68,6 +75,8 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AuthorizationPolicies.CommercialAdmin, policy => policy.RequireRole(IdentityRoles.Admin));
     options.AddPolicy(AuthorizationPolicies.WorkOrderManagement, policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager).RequireAssertion(context => context.User.FindFirst("platform_administrator")?.Value != "true"));
     options.AddPolicy(AuthorizationPolicies.WorkOrderExecution, policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager, IdentityRoles.User).RequireAssertion(context => context.User.FindFirst("platform_administrator")?.Value != "true"));
+    options.AddPolicy(AuthorizationPolicies.DocumentManagement, policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager).RequireAssertion(context => context.User.FindFirst("platform_administrator")?.Value != "true"));
+    options.AddPolicy(AuthorizationPolicies.DocumentRead, policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager, IdentityRoles.User).RequireAssertion(context => context.User.FindFirst("platform_administrator")?.Value != "true"));
     options.AddPolicy(AuthorizationPolicies.PlatformAdministrator, policy => policy.RequireClaim("platform_administrator", "true"));
 });
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
@@ -350,6 +359,7 @@ app.MapServiceEndpoints();
 app.MapQuoteEndpoints();
 app.MapContractEndpoints();
 app.MapWorkOrderEndpoints();
+app.MapDocumentEndpoints();
 app.MapPlatformOrganizationEndpoints();
 app.MapServiceLineEndpoints();
 

@@ -85,6 +85,12 @@ Agenda reads Work Orders, never duplicates their scheduling data. `GET /api/work
 
 ADMIN/MANAGER see their Organization's entries and may filter by professional. USER is always scoped to authenticated assignment, ignoring requested assignee filters. Platform Administrators have no operational access. Sao Paulo day/week/month boundaries are sent as offset-aware ISO timestamps. Scheduling redirects to the relevant Agenda day and highlights the OS. Day uses an hourly timeline and a separate untimed section; week and month retain seven columns with horizontal scrolling on narrow screens. Agenda links to Work Order details; editing, recurrence, synchronization, notifications, and conflict prevention are outside this MVP.
 
+## Documents
+
+Every Document belongs to exactly one Customer within one Organization. It may also identify one validated Customer, Customer Unit, Quote, Contract, or Work Order context owned by that same Customer and Organization. A Document is independent of Work Order transitions: completed Work Orders may receive documents later, and completion never requires an attachment.
+
+The first phase provides upload, customer-scoped metadata listing, and authorized download. Metadata and upload audit are stored in PostgreSQL; file bytes are held in private storage under generated identifiers. No document UI, deletion, versioning, cloud provider, or extracted-content search is part of this phase.
+
 ## Historical integrity
 
 Historical commercial and contractual records must remain readable even when current configuration changes.

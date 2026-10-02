@@ -7,6 +7,7 @@ using Tsdt.Api.Quotes;
 using Tsdt.Api.Platform;
 using Tsdt.Api.Contracts;
 using Tsdt.Api.WorkOrders;
+using Tsdt.Api.Documents;
 
 namespace Tsdt.Api.Identity;
 
@@ -34,6 +35,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<WorkOrderItem> WorkOrderItems => Set<WorkOrderItem>();
     public DbSet<WorkOrderAuditRecord> WorkOrderAuditRecords => Set<WorkOrderAuditRecord>();
     public DbSet<WorkOrderNumberCounter> WorkOrderNumberCounters => Set<WorkOrderNumberCounter>();
+    public DbSet<DocumentRecord> Documents => Set<DocumentRecord>();
+    public DbSet<DocumentAuditRecord> DocumentAuditRecords => Set<DocumentAuditRecord>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationAuditRecord> OrganizationAuditRecords => Set<OrganizationAuditRecord>();
     public DbSet<ServiceLine> ServiceLines => Set<ServiceLine>();
@@ -70,6 +73,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(customer => customer.OrganizationId).IsRequired();
             entity.Property(customer => customer.Version).IsConcurrencyToken();
             entity.HasIndex(customer => new { customer.OrganizationId, customer.Cnpj }).IsUnique();
+            entity.HasAlternateKey(customer => new { customer.OrganizationId, customer.Id });
             entity.HasIndex(customer => new { customer.OrganizationId, customer.IsActive, customer.LegalName });
             entity.HasOne<Organization>().WithMany().HasForeignKey(customer => customer.OrganizationId).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(customer => TenantOrganizationId == null || customer.OrganizationId == TenantOrganizationId);
@@ -237,6 +241,37 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         });
         builder.Entity<WorkOrderAuditRecord>(entity => { entity.ToTable("WorkOrderAuditRecords"); entity.HasKey(item => item.Id); entity.Property(item => item.ActorUserId).IsRequired(); entity.Property(item => item.Action).IsRequired().HasMaxLength(80); entity.Property(item => item.ChangedFields).HasMaxLength(500); entity.Property(item => item.ActorNameSnapshot).HasMaxLength(120); entity.Property(item => item.CancellationReason).HasMaxLength(500); entity.HasIndex(item => new { item.WorkOrderId, item.OccurredAtUtc }); entity.HasOne(item => item.WorkOrder).WithMany().HasForeignKey(item => item.WorkOrderId).OnDelete(DeleteBehavior.Restrict); });
         builder.Entity<WorkOrderNumberCounter>(entity => { entity.ToTable("WorkOrderNumberCounters", table => table.HasCheckConstraint("CK_WorkOrderNumberCounters_Range", "\"LastNumber\" >= 1 AND \"LastNumber\" <= 999999")); entity.HasKey(item => new { item.OrganizationId, item.Year }); entity.HasOne<Organization>().WithMany().HasForeignKey(item => item.OrganizationId).OnDelete(DeleteBehavior.Restrict); });
+        builder.Entity<DocumentRecord>(entity =>
+        {
+            entity.ToTable("Documents", table =>
+            {
+                table.HasCheckConstraint("CK_Documents_SizeBytes_Positive", "\"SizeBytes\" > 0");
+                table.HasCheckConstraint("CK_Documents_Context_Pair", "(\"ContextType\" IS NULL AND \"ContextId\" IS NULL) OR (\"ContextType\" IS NOT NULL AND \"ContextId\" IS NOT NULL)");
+            });
+            entity.HasKey(document => document.Id);
+            entity.Property(document => document.OriginalFileName).IsRequired().HasMaxLength(180);
+            entity.Property(document => document.ContentType).IsRequired().HasMaxLength(100);
+            entity.Property(document => document.Description).HasMaxLength(1000);
+            entity.Property(document => document.Category).HasConversion<string>().HasMaxLength(32);
+            entity.Property(document => document.Purpose).HasConversion<string>().HasMaxLength(32);
+            entity.Property(document => document.ContextType).HasConversion<string>().HasMaxLength(32);
+            entity.Property(document => document.UploadedByUserId).IsRequired();
+            entity.HasIndex(document => new { document.OrganizationId, document.CustomerId, document.UploadedAtUtc });
+            entity.HasIndex(document => new { document.OrganizationId, document.ContextType, document.ContextId });
+            entity.HasIndex(document => document.StorageKey).IsUnique();
+            entity.HasOne<Customer>().WithMany().HasForeignKey(document => new { document.OrganizationId, document.CustomerId })
+                .HasPrincipalKey(customer => new { customer.OrganizationId, customer.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasQueryFilter(document => TenantOrganizationId == null || document.OrganizationId == TenantOrganizationId);
+        });
+        builder.Entity<DocumentAuditRecord>(entity =>
+        {
+            entity.ToTable("DocumentAuditRecords"); entity.HasKey(record => record.Id);
+            entity.Property(record => record.ActorUserId).IsRequired();
+            entity.Property(record => record.Action).IsRequired().HasMaxLength(80);
+            entity.Property(record => record.ContextType).HasConversion<string>().HasMaxLength(32);
+            entity.HasIndex(record => new { record.OrganizationId, record.CustomerId, record.OccurredAtUtc });
+            entity.HasOne<DocumentRecord>().WithMany().HasForeignKey(record => record.DocumentId).OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -253,6 +288,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         ApplyOwnership(ChangeTracker.Entries<Quote>(), organizationId, quote => quote.OrganizationId, (quote, value) => quote.OrganizationId = value);
         ApplyOwnership(ChangeTracker.Entries<Contract>(), organizationId, contract => contract.OrganizationId, (contract, value) => contract.OrganizationId = value);
         ApplyOwnership(ChangeTracker.Entries<WorkOrder>(), organizationId, order => order.OrganizationId, (order, value) => order.OrganizationId = value);
+        ApplyOwnership(ChangeTracker.Entries<DocumentRecord>(), organizationId, document => document.OrganizationId, (document, value) => document.OrganizationId = value);
     }
 
     private static void ApplyOwnership<TEntity>(IEnumerable<Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TEntity>> entries, Guid organizationId, Func<TEntity, Guid> getOrganizationId, Action<TEntity, Guid> setOrganizationId) where TEntity : class

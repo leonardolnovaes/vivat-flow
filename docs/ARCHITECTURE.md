@@ -28,7 +28,7 @@ See [PRODUCT_MODEL.md](PRODUCT_MODEL.md) for canonical domain boundaries.
 | Quotes | commercial proposals, items, approval lifecycle, assignment/visits |
 | Contracts | explicit formalization of approved Quotes and immutable commercial scope |
 | Work Orders | explicit execution, assignment, schedule, operational status, and audit |
-| Documents | future document metadata, context, versions, storage references |
+| Documents | customer-owned metadata, validated business context, private binary storage, upload audit |
 | Deliveries | future delivery records and evidence |
 | Dashboard | future operational projections/actionable lists |
 | Audit | accountable important-action records |
@@ -40,6 +40,10 @@ See [PRODUCT_MODEL.md](PRODUCT_MODEL.md) for canonical domain boundaries.
 Tenant-owned aggregate roots are resolved server-side from the authenticated user's Organization. Backend authorization and tenant filters are authoritative; the frontend is not a security boundary.
 
 Current tenant ownership covers Customers, Services, Quotes, Contracts, Work Orders, eligible-professional lookups, and their owned child records. Future operational aggregates must implement the same boundary before release.
+
+Documents have one Customer owner within one Organization. Optional Customer, Customer Unit, Quote, Contract, or Work Order context is resolved against that same owner on the backend. Document metadata and upload audit are in PostgreSQL; binary content is in private storage behind `IDocumentStorage`. The local provider uses generated identifiers under the configured private root. Upload writes the file first and removes it if metadata persistence fails. There is no document deletion API in this phase.
+
+Documents persist an explicit purpose: internal/supporting or customer deliverable. Document reads have their own authorization boundary. ADMIN can read tenant documents; MANAGER can read tenant documents outside commercial context and categories; USER can read only noncommercial files tied to an assigned Work Order for an active Customer. Quote/Contract context and Contract/SignedDocument categories require ADMIN for upload and read.
 
 Platform Administrators are separate from tenant users. Platform access must never imply operational tenant access.
 
