@@ -16,7 +16,7 @@ DEV uses the current working tree and may change during development. It never ch
 
 ### Local startup and manual validation
 
-When asked to start or run the application, use `./scripts/start-local.ps1` to start the complete DEV environment for browser validation. Start the repository Docker Compose dependencies, PostgreSQL, backend API, and frontend development server as required. Verify that the API health endpoint responds and the frontend is reachable. Report the exact frontend, API, and health-check URLs. Identify only intended local development accounts when applicable; never expose passwords or other secrets.
+When asked to start or run DEV, or to run the application for local development or manual validation, use `./scripts/start-local.ps1` to start the complete DEV environment for browser validation. Explicit DEMO requests follow the DEMO section below. Start the repository Docker Compose dependencies, PostgreSQL, backend API, and frontend development server as required. Verify that the API health endpoint responds and the frontend is reachable. Report the exact frontend, API, and health-check URLs. Identify only intended local development accounts when applicable; never expose passwords or other secrets.
 
 Keep the environment running for manual validation. Do not stop it after checking startup or validation; stop processes only when the user explicitly asks. When Docker is running and the local application environment has been started, keep that localhost environment running until the user asks to stop it.
 
