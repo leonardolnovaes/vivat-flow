@@ -2,7 +2,7 @@
 # This file is declarative documentation for Vivat Flow; no runtime parser is required.
 framework:
   repository: leonardolnovaes/ai-engineering
-  revision: 8da4465ced2dfbbc0157183535ace671f0ae1036
+  revision: acdd4aae0489495e3f2596ac13776867b56623b2
   revision_status: pending-ai-engineering-pr-2
   schema_version: 1
 
