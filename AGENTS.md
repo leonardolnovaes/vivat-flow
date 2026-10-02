@@ -203,55 +203,8 @@ This allows the project to identify validation waste.
 
 ## Local application runtime
 
-### Permanent DEMO / DEV boundary
+Before starting, restarting, stopping, exposing, promoting, or validating a running application environment, read and follow `docs/ENVIRONMENTS.md`. Read it before completing a meaningful functional change that requires browser/manual QA. It is the canonical operational contract.
 
-The customer-facing Cloudflare environment is DEMO. Normal local work is DEV only: use `scripts\start-local.ps1`, which owns frontend `5175`, API `7227`, and the separate `vivatflow_dev` logical database on the shared PostgreSQL port `5432`. DEV and DEMO may share the PostgreSQL instance, but never the same database. Promotion to DEMO is an explicit operation after QA through `scripts\start-demo.ps1`; DEV is never exposed through Cloudflare. The canonical operational contract is `docs/ENVIRONMENTS.md`: DEMO is persistent (`5173`/`7226`/`tsdt`) and PREVIEW is disposable only when explicitly requested.
+Normal development runs in DEV. DEMO is the persistent customer-facing environment. DEV and DEMO must never share a logical database; do not modify or expose DEMO implicitly.
 
-When the user asks to start or run the application, start the complete local environment and keep it running for manual browser validation. This includes, when required:
-
-- Repository Docker Compose dependencies.
-- PostgreSQL.
-- Backend API.
-- Frontend development server.
-
-After startup:
-
-- Verify that the API is healthy.
-- Verify that the frontend is reachable.
-- Provide the exact frontend, API, and health-check URLs to the user.
-- Keep all processes running until the user explicitly asks to stop them.
-
-Do not merely verify that the application can start and then terminate it. Do not expose passwords or other secrets; identify only intended local development accounts when applicable.
-
-### Proactive startup after changes
-
-After completing a meaningful functional change, proactively start or restart the application so the user can validate it in the browser.
-
-Meaningful changes include:
-
-- Frontend UI or UX changes.
-- Authentication or authorization changes.
-- New or modified application flows.
-- API behavior changes.
-- Backend changes that affect visible application behavior.
-- Configuration or database changes that affect runtime behavior.
-
-A proactive startup is not required for documentation-only changes, comments, formatting, or other changes that cannot affect runtime behavior.
-
-If the application is already running:
-
-- Reuse the existing environment when possible.
-- Restart only the services necessary for the changes to take effect.
-- Do not create duplicate application instances on arbitrary ports.
-- Use `.\scripts\start-local.ps1` for backend/frontend startup (with `-BackendOnly`, `-FrontendOnly`, or `-Restart` when appropriate). It verifies the listener owner and `/health`, reuses a healthy TSDT process, and refuses an occupied port owned by another process. It starts hidden processes and writes logs under `.local\logs`.
-- Never issue `dotnet run` or `npm run dev` directly against ports 7226 or 5173 without first using `scripts\start-demo.ps1`. A restart must stop the project-owned process and wait for its port to be released before starting a replacement.
-
-After relevant changes, the final response should clearly state that the application is available and provide the URLs needed for manual validation.
-
-Never stop the application automatically after validation. Stop it only when explicitly requested by the user.
-
-### Docker-backed local workflow
-
-- When Docker is running and the local application environment has been started, keep the localhost environment running unless the user explicitly asks to stop it.
-- After meaningful application code changes, rebuild or update every affected local Docker image before runtime validation. When application services are defined in Docker Compose, use the updated images for the local validation environment.
-- The current Compose configuration provides PostgreSQL only. Do not introduce application containers solely to satisfy this workflow; apply the image rebuild requirement to application images once they exist.
+After a meaningful functional change that affects visible or runtime behavior, make the application available for manual validation when applicable. Follow `docs/ENVIRONMENTS.md` for the startup, verification, and reporting procedure.
