@@ -2,7 +2,8 @@
 # This file is declarative documentation for Vivat Flow; no runtime parser is required.
 framework:
   repository: leonardolnovaes/ai-engineering
-  revision: 2b995c46082766d31e9904541c504e246b472668
+  revision: 8da4465ced2dfbbc0157183535ace671f0ae1036
+  revision_status: pending-ai-engineering-pr-2
   schema_version: 1
 
 adoption:
@@ -24,19 +25,13 @@ review:
     unavailable: pending
   final_merge: user
 
-quality_guardrail:
-  policy: hard-constraint
-  rule: preserve-or-improve
-  action_on_material_regression: reject-or-revert
-  uncertainty: keep-safer-baseline
-
 existing_rules:
   evaluation: pending
   default_cost_assessment: UNKNOWN
   policy:
     - evaluate each existing engineering and AI-assisted workflow rule individually
     - do not assume an existing rule is cheaper because it already exists
-    - preserve quality, security, privacy, governance, and product constraints while measuring cost
+    - apply the AI Engineering quality non-regression guardrail while measuring cost
     - promote reusable findings only when evidence supports broader scope
 
 boundaries:
