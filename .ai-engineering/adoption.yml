@@ -24,6 +24,12 @@ review:
     unavailable: pending
   final_merge: user
 
+quality_guardrail:
+  policy: hard-constraint
+  rule: preserve-or-improve
+  action_on_material_regression: reject-or-revert
+  uncertainty: keep-safer-baseline
+
 existing_rules:
   evaluation: pending
   default_cost_assessment: UNKNOWN
