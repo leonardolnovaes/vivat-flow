@@ -103,7 +103,7 @@ function UploadDialog({ customerId, isAdmin, onSessionExpired, close, uploaded }
     setErrors(local); if (Object.keys(local).length) return
     setPending(true); setMessage('')
     try {
-      const context = contexts.find(item => `${item.type}:${item.id}` === contextKey) ?? null
+      const context = contextsLoading || Boolean(contextError) ? null : (contexts.find(item => `${item.type}:${item.id}` === contextKey) ?? null)
       await uploadDocument(customerId, { file: file!, category, purpose, description, context })
       uploaded()
     } catch (caught) {
@@ -120,9 +120,9 @@ function UploadDialog({ customerId, isAdmin, onSessionExpired, close, uploaded }
       <label>Categoria *<select value={category} disabled={pending} onChange={event => setCategory(event.target.value as DocumentCategory)}>{available.map(item => <option key={item} value={item}>{categories[item]}</option>)}</select>{errors.category && <small className="error" role="alert">{errors.category[0]}</small>}</label>
       <label>Finalidade *<select value={purpose} disabled={pending} onChange={event => setPurpose(event.target.value as DocumentPurpose)}>{(Object.keys(purposes) as DocumentPurpose[]).map(item => <option key={item} value={item}>{purposes[item]}</option>)}</select>{errors.purpose && <small className="error" role="alert">{errors.purpose[0]}</small>}</label>
       <label>Relacionado a<select value={contextKey} disabled={pending || contextsLoading || Boolean(contextError)} onChange={event => setContextKey(event.target.value)}><option value="">Sem contexto específico</option>{contexts.map(item => <option key={`${item.type}:${item.id}`} value={`${item.type}:${item.id}`}>{item.label}</option>)}</select>{errors.contextType && <small className="error" role="alert">{errors.contextType[0]}</small>}{errors.contextId && <small className="error" role="alert">{errors.contextId[0]}</small>}</label>
-      {contextsLoading && <LoadingState size="sm" />}{contextError && <p className="error" role="alert">{contextError}</p>}
+      {contextsLoading && <LoadingState size="sm" />}{contextError && <p className="error" role="alert">{contextError} Você ainda pode enviar o documento sem contexto específico.</p>}
       <label>Descrição<textarea value={description} maxLength={1000} disabled={pending} onChange={event => setDescription(event.target.value)} />{errors.description && <small className="error" role="alert">{errors.description[0]}</small>}</label>
-      <div className="actions"><button type="button" className="secondary" disabled={pending} onClick={close}>Cancelar</button><button disabled={pending || contextsLoading || Boolean(contextError)}>{pending ? 'Enviando…' : 'Enviar documento'}</button></div>
+      <div className="actions"><button type="button" className="secondary" disabled={pending} onClick={close}>Cancelar</button><button disabled={pending}>{pending ? 'Enviando…' : 'Enviar documento'}</button></div>
     </form>
   </section></div>
 }
