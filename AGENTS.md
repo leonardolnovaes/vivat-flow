@@ -14,10 +14,9 @@
 
 ## AI Engineering adoption
 
-Vivat Flow adopts AI Engineering principles through its local `.ai-engineering/adoption.yml`. AI Engineering defines reusable mechanisms and evidence discipline; this repository owns the operational policy.
+Vivat Flow adopts AI Engineering through its local `.ai-engineering/adoption.yml`. All portable AI Engineering rules are enabled by default; explicit local overrides may disable or replace individual rules. AI Engineering defines reusable mechanisms and evidence discipline; this repository owns the operational policy.
 
 - Existing Vivat Flow engineering, validation, Git, security, QA, and runtime rules remain authoritative until each rule is evaluated individually. Do not assume an existing rule is cheaper, more expensive, or obsolete merely because it already exists.
-- Apply the AI Engineering quality non-regression guardrail: cost optimizations are acceptable only when required quality is preserved or improved.
 - For meaningful repository changes, the implementing agent performs a pre-handoff self-review of the final diff. Self-review does not count as independent review.
 - Independent AI review is cross-agent by default:
   - Codex implementation -> ChatGPT independent AI review.
