@@ -32,4 +32,5 @@
 - Implementer self-review completed: yes/no
 - Ready for independent review: yes/no
 - AI Engineering efficiency review required: yes
+- Review cost trace: files/diffs inspected; extra tool executions; retries; direct token/credit usage if exposed, otherwise `UNKNOWN`
 - Ready for merge: no
