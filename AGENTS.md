@@ -16,6 +16,8 @@
 
 Vivat Flow adopts AI Engineering through its local `.ai-engineering/adoption.yml`. All portable AI Engineering rules are enabled by default; explicit local overrides may disable or replace individual rules. AI Engineering defines reusable mechanisms and evidence discipline; this repository owns the operational policy.
 
+When a task invokes an AI Engineering Rule ID, resolve the framework from the source, Consumer Protocol, and Rule Registry declared in `.ai-engineering/adoption.yml` at its exact pinned revision. Do not substitute framework `main` or reconstruct rules from memory if resolution fails; report the rule as unavailable or pending. Report the framework repository, resolved SHA, and Rule IDs consulted for meaningful framework-dependent handoffs and reviews. Vivat Flow's local operational policy remains authoritative where the framework defines only the mechanism.
+
 - Existing Vivat Flow engineering, validation, Git, security, QA, and runtime rules remain authoritative until each rule is evaluated individually. Do not assume an existing rule is cheaper, more expensive, or obsolete merely because it already exists.
 - For meaningful repository changes, the implementing agent performs a pre-handoff self-review of the final diff. Self-review does not count as independent review.
 - Independent AI review is cross-agent by default:
