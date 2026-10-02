@@ -59,5 +59,5 @@ $env:BootstrapAdmin__Password = "<unique-local-password>"
 ## Next steps
 
 - Follow [ENVIRONMENTS.md](ENVIRONMENTS.md) to operate DEV, DEMO, or PREVIEW and to validate a running application.
-- Follow [AGENTS.md](../AGENTS.md) for validation and test execution policy. Canonical `scripts/validate.ps1` runs only when the user explicitly requests it; normal AI-assisted development uses targeted unit tests and proportionate static, build, or lint checks. Non-unit suites are run manually or in CI/CD, never automatically by the AI.
-- For manual non-unit test entry points, see `backend/tests/validate-module1-postgres.ps1`, `scripts/run-e2e.ps1`, and the integration test categories in `AGENTS.md`.
+- Follow the [engineering policy](../.ai-engineering/engineering-policy.md) for validation and test execution. Canonical `scripts/validate.ps1` runs only when the user explicitly requests it; normal AI-assisted development uses targeted unit tests and proportionate static, build, or lint checks. Non-unit suites are run manually or in CI/CD, never automatically by the AI.
+- For manual non-unit test entry points, see `backend/tests/validate-module1-postgres.ps1`, `scripts/run-e2e.ps1`, and the integration test categories in the engineering policy.
