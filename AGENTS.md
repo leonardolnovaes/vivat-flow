@@ -17,6 +17,7 @@
 Vivat Flow adopts the AI Engineering operating model pinned in `.ai-engineering/adoption.yml`. The external framework defines reusable mechanisms and evidence discipline; this repository owns the operational policy.
 
 - Existing Vivat Flow engineering, validation, Git, security, QA, and runtime rules remain authoritative until each rule is evaluated individually. Do not assume an existing rule is cheaper, more expensive, or obsolete merely because it already exists.
+- **Quality non-regression is a hard constraint.** An AI Engineering optimization is acceptable only when required product quality, correctness, security, privacy, maintainability, and user experience are preserved or improved. If evidence shows a material quality regression, reject or revert the optimization even if it is cheaper. When quality impact is uncertain, treat the cost improvement as unproven and keep the safer baseline.
 - For meaningful repository changes, the implementing agent performs a pre-handoff self-review of the final diff. Self-review does not count as independent review.
 - Independent AI review is cross-agent by default:
   - Codex implementation -> ChatGPT independent AI review.
