@@ -1,7 +1,15 @@
 # Project-owned AI Engineering adoption manifest.
 # This file is declarative documentation for Vivat Flow; no runtime parser is required.
-framework: ai-engineering
-schema_version: 1
+schema_version: 2
+
+framework:
+  id: ai-engineering
+  source:
+    provider: github
+    repository: leonardolnovaes/ai-engineering
+    ref: d00a716bd761c50113c9ec8b05f39f56225b7792
+    consumer_protocol: CONSUMER_PROTOCOL.md
+    rule_registry: RULES.json
 
 rules:
   default: enabled
@@ -9,17 +17,23 @@ rules:
 
 review:
   status: experimental
-  ai_efficiency_review:
-    policy: required
   self_review:
+    rule_id: self-review
     policy: required-for-meaningful-changes
   independent_review:
+    rule_id: independent-review
     policy: required
     topology:
       codex: chatgpt
       chatgpt: codex
       other: user-selected-independent-ai-reviewer
     unavailable: pending
+  ai_efficiency_review:
+    rule_id: ai-efficiency-review
+    policy: required
+  cost_aware_review:
+    rule_id: cost-aware-review
+    policy: required
   final_merge: user
 
 existing_rules:
