@@ -24,6 +24,9 @@ Vivat Flow adopts the AI Engineering operating model pinned in `.ai-engineering/
   - Another implementer -> an independent reviewer selected by the user/project policy.
 - If the designated independent reviewer is unavailable, mark independent review as pending. Do not silently substitute the implementer's self-review.
 - The independent reviewer must perform both the normal technical review and the AI Engineering efficiency review, separating measured observations from inference.
+- Review economically: start from PR metadata and changed files/diff; inspect unchanged repository files only when a concrete finding or dependency requires them. Reuse implementation/validation evidence already present in the PR instead of rerunning or rediscovering it.
+- Keep a lightweight review-cost trace using already-observed data: files/diffs inspected, extra tool executions, retries, and direct token/credit usage only when the platform actually exposes it. If exact token/credit usage is unavailable, record `UNKNOWN` rather than estimating it.
+- Stop the review once the requested technical and AI-efficiency gates are satisfied; do not perform open-ended hardening or repository-wide exploration without a concrete reason.
 - This cross-agent topology is `EXPERIMENTAL`: measure its review escapes, retries, validation cost, and useful findings. Revisit it when evidence or tooling changes; do not treat it as permanent.
 - The user remains the final decision-maker and performs the merge manually.
 - AI Engineering findings use the smallest justified action: `NONE`, `WATCH`, `EXPERIMENT`, `PROMOTE`, or `REJECT`. Do not create framework changes from isolated findings unless evidence justifies them.
