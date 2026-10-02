@@ -12,6 +12,21 @@
 - Follow the Git workflow and review gate below for branch, commit, push, pull request, review, and merge behavior.
 - All new frontend screens and meaningful frontend changes must follow `docs/FRONTEND_STANDARDS.md`; UI work is not complete until its running-screen visual/manual QA gate passes.
 
+## AI Engineering adoption
+
+Vivat Flow adopts the AI Engineering operating model pinned in `.ai-engineering/adoption.yml`. The external framework defines reusable mechanisms and evidence discipline; this repository owns the operational policy.
+
+- Existing Vivat Flow engineering, validation, Git, security, QA, and runtime rules remain authoritative until each rule is evaluated individually. Do not assume an existing rule is cheaper, more expensive, or obsolete merely because it already exists.
+- For meaningful repository changes, the implementing agent performs a pre-handoff self-review of the final diff. Self-review does not count as independent review.
+- Independent review is cross-agent by default:
+  - Codex implementation -> ChatGPT independent review.
+  - ChatGPT implementation -> Codex independent review.
+  - Another implementer -> an independent reviewer selected by the user/project policy.
+- If the designated independent reviewer is unavailable, mark independent review as pending. Do not silently substitute the implementer's self-review.
+- The independent reviewer must perform both the normal technical review and the AI Engineering efficiency review, separating measured observations from inference.
+- The user remains the final decision-maker and performs the merge manually.
+- AI Engineering findings use the smallest justified action: `NONE`, `WATCH`, `EXPERIMENT`, `PROMOTE`, or `REJECT`. Do not create framework changes from isolated findings unless evidence justifies them.
+
 ## Git workflow and review gate
 
 `main` is the stable integration branch. Agents must not implement meaningful changes directly on `main`, must not push feature work to `main`, and must never merge a pull request. The user is always the final reviewer and performs the merge manually.
@@ -50,7 +65,8 @@ For every prompt/task that changes repository files, completion is not finished 
 3. Commit the completed scope on the task branch.
 4. Push that branch to `origin`.
 5. Open a pull request targeting `main`.
-6. Return the branch name, latest commit SHA, pull request number, and pull request URL.
+6. Identify the implementing agent and the designated independent reviewer under the local AI Engineering policy.
+7. Return the branch name, latest commit SHA, pull request number, and pull request URL.
 
 Do not leave completed implementation only in the local working tree and wait for the user to ask for commit, push, or pull request creation.
 
@@ -59,12 +75,12 @@ Do not push incomplete experimental work unless the user explicitly asks to pres
 ### When to open a pull request
 
 - Every branch whose changes are intended to enter `main` must go through a pull request.
-- Opening the pull request is mandatory at the end of every completed repository-changing task; it is the handoff point for ChatGPT code review, not permission to merge.
+- Opening the pull request is mandatory at the end of every completed repository-changing task; it is the handoff point for the designated independent code review, not permission to merge.
 - Base the pull request on `main`.
 - Do not open a pull request for investigation/read-only work with no repository change, abandoned experiments, or intentionally incomplete work unless the user explicitly asks for a draft pull request.
 - Manual UI/E2E/integration QA may still be pending when the pull request is opened. Mark it clearly as pending.
 - Use `.github/pull_request_template.md` and keep the pull request focused on one task.
-- After ChatGPT review feedback, keep using the same branch and the same pull request. Apply requested corrections, validate the affected scope, commit the correction, push the same branch, and return the new commit SHA and existing pull request number for re-review.
+- After independent review feedback, keep using the same branch and the same pull request. Apply requested corrections, validate the affected scope, commit the correction, push the same branch, and return the new commit SHA and existing pull request number for re-review.
 - Never create a second pull request only to address review findings.
 
 ### Required handoff after opening or updating a pull request
@@ -74,6 +90,7 @@ Report all of the following to the user:
 - Pull request number and URL.
 - Branch name.
 - Latest commit SHA.
+- Implementing agent and designated independent reviewer.
 - Concise scope summary.
 - Automated validation executed, including canonical validation count, unit-test execution count, non-unit execution count, and retries.
 - Manual QA still required, with exact steps or commands when applicable.
@@ -84,7 +101,7 @@ Then stop. Do not merge the pull request.
 ### Review and merge gate
 
 - A pull request is not ready for `main` merely because implementation and automated validation succeeded.
-- The mandatory gate is: new task branch created before editing -> implementation complete -> commit -> push -> pull request opened -> ChatGPT code review -> requested corrections resolved on the same branch/PR -> user manual QA when applicable -> user final review -> user performs the merge manually.
+- The mandatory gate is: new task branch created before editing -> implementation complete -> implementer self-review -> commit -> push -> pull request opened -> designated independent code review -> requested corrections resolved on the same branch/PR -> user manual QA when applicable -> user final review -> user performs the merge manually.
 - Treat review findings as:
   - `BLOCKER`: must be fixed before merge.
   - `NON-BLOCKING`: valid improvement that does not block the current delivery.
