@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
@@ -12,6 +13,7 @@ using Tsdt.Api.Quotes;
 using Tsdt.Api.Platform;
 using Tsdt.Api.Contracts;
 using Tsdt.Api.WorkOrders;
+using Tsdt.Api.Documents;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -29,6 +31,10 @@ if (builder.Environment.IsEnvironment("Testing"))
 builder.Services.Configure<BootstrapAdminOptions>(builder.Configuration.GetSection(BootstrapAdminOptions.SectionName));
 builder.Services.Configure<OrganizationBootstrapOptions>(builder.Configuration.GetSection(OrganizationBootstrapOptions.SectionName));
 builder.Services.Configure<PlatformBootstrapAdminOptions>(builder.Configuration.GetSection(PlatformBootstrapAdminOptions.SectionName));
+builder.Services.Configure<DocumentStorageOptions>(builder.Configuration.GetSection(DocumentStorageOptions.SectionName));
+builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = builder.Configuration.GetValue<long?>("DocumentStorage:MaxFileSizeBytes") ?? 10 * 1024 * 1024);
+builder.Services.AddSingleton<IDocumentStorage, LocalDocumentStorage>();
+builder.Services.AddScoped<DocumentService>();
 builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 {
     options.User.RequireUniqueEmail = true;
@@ -350,6 +356,7 @@ app.MapServiceEndpoints();
 app.MapQuoteEndpoints();
 app.MapContractEndpoints();
 app.MapWorkOrderEndpoints();
+app.MapDocumentEndpoints();
 app.MapPlatformOrganizationEndpoints();
 app.MapServiceLineEndpoints();
 

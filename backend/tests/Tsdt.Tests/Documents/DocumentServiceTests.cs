@@ -1,0 +1,211 @@
+using System.Text;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Tsdt.Api.Contracts;
+using Tsdt.Api.Customers;
+using Tsdt.Api.Documents;
+using Tsdt.Api.Identity;
+using Tsdt.Api.Platform;
+using Tsdt.Api.Quotes;
+using Tsdt.Api.WorkOrders;
+
+namespace Tsdt.Tests.Documents;
+
+[Trait("Category", "Unit")]
+public sealed class DocumentServiceTests
+{
+    private static readonly byte[] Pdf = Encoding.ASCII.GetBytes("%PDF-1.7\nminimal test content");
+
+    [Fact]
+    public async Task Upload_persists_metadata_and_audit_and_can_be_listed_and_downloaded()
+    {
+        using var fixture = new Fixture();
+        var upload = fixture.Upload(fixture.CustomerA.Id, fileName: @"folder\report.pdf");
+        var result = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor", upload);
+
+        Assert.Equal("report.pdf", result.FileName);
+        Assert.Equal(fixture.CustomerA.Id, result.CustomerId);
+        Assert.Equal(DocumentCategory.Report, result.Category);
+        Assert.Equal(Pdf.Length, result.SizeBytes);
+        Assert.Equal("actor", result.UploadedByUserId);
+        Assert.DoesNotContain("storage", string.Join(' ', typeof(DocumentResponse).GetProperties().Select(property => property.Name)), StringComparison.OrdinalIgnoreCase);
+        var stored = await fixture.Db.Documents.SingleAsync();
+        Assert.NotEqual(Guid.Empty, stored.StorageKey);
+        Assert.Single(await fixture.Db.DocumentAuditRecords.Where(audit => audit.DocumentId == result.Id && audit.Action == "DOCUMENT_UPLOADED" && audit.ActorUserId == "actor").ToListAsync());
+        Assert.Equal(result.Id, Assert.Single((await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id)).Items).Id);
+        var download = await fixture.Service.DownloadAsync(fixture.OrganizationA.Id, result.Id);
+        await using var content = download.Content;
+        using var bytes = new MemoryStream();
+        await content.CopyToAsync(bytes);
+        Assert.Equal(Pdf, bytes.ToArray());
+        Assert.Equal("report.pdf", download.FileName);
+    }
+
+    [Fact]
+    public async Task Customer_and_context_must_belong_to_the_same_organization_and_customer()
+    {
+        using var fixture = new Fixture();
+        var orderA = fixture.AddCompletedOrder(fixture.CustomerA);
+        var orderB = fixture.AddCompletedOrder(fixture.CustomerB);
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor",
+            fixture.Upload(fixture.CustomerA2.Id, DocumentContextType.WorkOrder, orderA.Id)));
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor",
+            fixture.Upload(fixture.CustomerA.Id, DocumentContextType.WorkOrder, orderB.Id)));
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor",
+            fixture.Upload(fixture.CustomerB.Id)));
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor",
+            fixture.Upload(fixture.CustomerA.Id, DocumentContextType.Customer, fixture.CustomerA2.Id)));
+        Assert.Empty(await fixture.Db.Documents.ToListAsync());
+        Assert.Equal(0, fixture.Storage.SavedCount);
+    }
+
+    [Fact]
+    public async Task Completed_work_order_accepts_a_later_document()
+    {
+        using var fixture = new Fixture();
+        var order = fixture.AddCompletedOrder(fixture.CustomerA);
+        var result = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor",
+            fixture.Upload(fixture.CustomerA.Id, DocumentContextType.WorkOrder, order.Id));
+        Assert.Equal(DocumentContextType.WorkOrder, result.ContextType);
+        Assert.Equal(order.Id, result.ContextId);
+        Assert.Equal(WorkOrderStatus.Completed, (await fixture.Db.WorkOrders.SingleAsync(item => item.Id == order.Id)).Status);
+    }
+
+    [Fact]
+    public async Task All_supported_contexts_resolve_to_the_same_customer()
+    {
+        using var fixture = new Fixture();
+        var order = fixture.AddCompletedOrder(fixture.CustomerA);
+        var unit = new CustomerUnit { Id = Guid.NewGuid(), CustomerId = fixture.CustomerA.Id, Name = "Main",
+            Street = "Street", Number = "1", District = "District", City = "City", StateCode = "SP" };
+        fixture.Db.CustomerUnits.Add(unit);
+        fixture.Db.SaveChanges();
+        foreach (var (type, id) in new[]
+        {
+            (DocumentContextType.Customer, fixture.CustomerA.Id),
+            (DocumentContextType.CustomerUnit, unit.Id),
+            (DocumentContextType.Quote, order.QuoteId),
+            (DocumentContextType.Contract, order.ContractId!.Value),
+            (DocumentContextType.WorkOrder, order.Id)
+        })
+        {
+            var result = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor",
+                fixture.Upload(fixture.CustomerA.Id, type, id));
+            Assert.Equal(type, result.ContextType);
+            Assert.Equal(id, result.ContextId);
+        }
+        Assert.Equal(5, await fixture.Db.Documents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Empty_oversized_and_disguised_files_are_rejected()
+    {
+        using var fixture = new Fixture(maxBytes: Pdf.Length);
+        foreach (var upload in new[]
+        {
+            fixture.Upload(fixture.CustomerA.Id, bytes: []),
+            fixture.Upload(fixture.CustomerA.Id, bytes: new byte[Pdf.Length + 1]),
+            fixture.Upload(fixture.CustomerA.Id, fileName: "script.exe"),
+            fixture.Upload(fixture.CustomerA.Id, bytes: Encoding.ASCII.GetBytes("not a PDF")),
+            fixture.Upload(fixture.CustomerA.Id, contentType: "image/png"),
+            fixture.Upload(fixture.CustomerA.Id, DocumentContextType.Quote)
+        })
+            await Assert.ThrowsAsync<DocumentValidationException>(() => fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor", upload));
+        var understated = fixture.Upload(fixture.CustomerA.Id, bytes: new byte[Pdf.Length + 1]) with { DeclaredLength = Pdf.Length };
+        await Assert.ThrowsAsync<DocumentValidationException>(() => fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor", understated));
+        Assert.Empty(await fixture.Db.Documents.ToListAsync());
+        Assert.Equal(0, fixture.Storage.SavedCount);
+    }
+
+    [Fact]
+    public async Task Storage_failure_and_database_failure_leave_no_document_or_orphaned_file()
+    {
+        using (var fixture = new Fixture())
+        {
+            fixture.Storage.FailAfterSave = true;
+            await Assert.ThrowsAsync<IOException>(() => fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor", fixture.Upload(fixture.CustomerA.Id)));
+            Assert.Empty(await fixture.Db.Documents.AsNoTracking().ToListAsync());
+            Assert.Equal(0, fixture.Storage.SavedCount);
+        }
+        using (var fixture = new Fixture())
+        {
+            await fixture.Db.Database.ExecuteSqlRawAsync("DROP TABLE \"DocumentAuditRecords\"");
+            await Assert.ThrowsAnyAsync<Exception>(() => fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor", fixture.Upload(fixture.CustomerA.Id)));
+            Assert.Empty(await fixture.Db.Documents.AsNoTracking().ToListAsync());
+            Assert.Equal(0, fixture.Storage.SavedCount);
+        }
+    }
+
+    [Fact]
+    public async Task Lists_and_downloads_do_not_disclose_other_tenants_documents()
+    {
+        using var fixture = new Fixture();
+        var documentA = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor", fixture.Upload(fixture.CustomerA.Id));
+        var documentB = await fixture.Service.UploadAsync(fixture.OrganizationB.Id, "actor-b", fixture.Upload(fixture.CustomerB.Id));
+        Assert.Equal(documentA.Id, Assert.Single((await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id)).Items).Id);
+        Assert.Equal(documentB.Id, Assert.Single((await fixture.Service.ListAsync(fixture.OrganizationB.Id, fixture.CustomerB.Id)).Items).Id);
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerB.Id));
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.DownloadAsync(fixture.OrganizationA.Id, documentB.Id));
+        await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.DownloadAsync(fixture.OrganizationB.Id, documentA.Id));
+    }
+
+    private sealed class Fixture : IDisposable
+    {
+        private readonly SqliteConnection connection = new("Data Source=:memory:");
+        public ApplicationDbContext Db { get; }
+        public TestDocumentStorage Storage { get; } = new();
+        public DocumentService Service { get; }
+        public Organization OrganizationA { get; } = new() { Name = "Tenant A", Slug = "tenant-a" };
+        public Organization OrganizationB { get; } = new() { Name = "Tenant B", Slug = "tenant-b" };
+        public Customer CustomerA { get; }
+        public Customer CustomerA2 { get; }
+        public Customer CustomerB { get; }
+
+        public Fixture(long maxBytes = 10 * 1024 * 1024)
+        {
+            connection.Open();
+            Db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
+            Db.Database.EnsureCreated();
+            CustomerA = Customer(OrganizationA.Id, "Customer A", "04252011000110");
+            CustomerA2 = Customer(OrganizationA.Id, "Customer A2", "04252011000111");
+            CustomerB = Customer(OrganizationB.Id, "Customer B", "04252011000112");
+            Db.Organizations.AddRange(OrganizationA, OrganizationB);
+            Db.Customers.AddRange(CustomerA, CustomerA2, CustomerB);
+            Db.SaveChanges();
+            Service = new DocumentService(Db, Storage, Options.Create(new DocumentStorageOptions { RootPath = ".local/test-documents", MaxFileSizeBytes = maxBytes }));
+        }
+
+        public DocumentUpload Upload(Guid customerId, DocumentContextType? type = null, Guid? contextId = null,
+            string fileName = "report.pdf", string contentType = "application/pdf", byte[]? bytes = null)
+        {
+            var content = bytes ?? Pdf;
+            return new DocumentUpload(customerId, DocumentCategory.Report, "Relatório", type, contextId,
+                fileName, contentType, content.Length, new MemoryStream(content));
+        }
+
+        public WorkOrder AddCompletedOrder(Customer customer)
+        {
+            var quote = new Quote { Id = Guid.NewGuid(), OrganizationId = customer.OrganizationId, CustomerId = customer.Id,
+                Number = $"Q-{Guid.NewGuid():N}"[..16], CustomerLegalNameSnapshot = customer.LegalName,
+                CustomerCnpjSnapshot = customer.Cnpj, CreatedByUserId = "actor", UpdatedByUserId = "actor" };
+            var contract = new Contract { Id = Guid.NewGuid(), OrganizationId = customer.OrganizationId, CustomerId = customer.Id,
+                QuoteId = quote.Id, CustomerLegalNameSnapshot = customer.LegalName, CreatedByUserId = "actor", UpdatedByUserId = "actor" };
+            var order = new WorkOrder { Id = Guid.NewGuid(), OrganizationId = customer.OrganizationId, CustomerId = customer.Id,
+                QuoteId = quote.Id, ContractId = contract.Id, SourceType = WorkOrderSourceType.Contract, Status = WorkOrderStatus.Completed,
+                Number = $"OS-{Guid.NewGuid():N}"[..16], CustomerLegalNameSnapshot = customer.LegalName, ServiceAddressSnapshot = "Address",
+                CreatedByUserId = "actor", UpdatedByUserId = "actor" };
+            Db.Quotes.Add(quote); Db.Contracts.Add(contract); Db.WorkOrders.Add(order); Db.SaveChanges();
+            return order;
+        }
+
+        private static Customer Customer(Guid organizationId, string name, string cnpj) => new()
+        {
+            Id = Guid.NewGuid(), OrganizationId = organizationId, LegalName = name, Cnpj = cnpj,
+            CreatedByUserId = "actor", UpdatedByUserId = "actor", Version = Guid.NewGuid()
+        };
+
+        public void Dispose() { Db.Dispose(); connection.Dispose(); }
+    }
+
+}
