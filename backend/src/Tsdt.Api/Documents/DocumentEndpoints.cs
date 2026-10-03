@@ -11,6 +11,7 @@ public static class DocumentEndpoints
         var customers = app.MapGroup("/api/customers/{customerId:guid}/documents")
             .RequireAuthorization(AuthorizationPolicies.DocumentRead);
         customers.MapGet("", ListAsync);
+        customers.MapGet("/contexts", ContextOptionsAsync).RequireAuthorization(AuthorizationPolicies.DocumentManagement);
         customers.MapPost("", UploadAsync).RequireAuthorization(AuthorizationPolicies.DocumentManagement);
         app.MapGet("/api/documents/{id:guid}/download", DownloadAsync)
             .RequireAuthorization(AuthorizationPolicies.DocumentRead);
@@ -65,6 +66,12 @@ public static class DocumentEndpoints
     private static async Task<IResult> ListAsync(Guid customerId, int? page, int? pageSize, HttpContext context, DocumentService documents)
     {
         try { return Results.Ok(await documents.ListAsync(TenantContext.OrganizationId(context), customerId, Actor(context), Access(context), page ?? 1, pageSize ?? 25, context.RequestAborted)); }
+        catch (DocumentNotFoundException) { return Results.NotFound(); }
+    }
+
+    private static async Task<IResult> ContextOptionsAsync(Guid customerId, HttpContext context, DocumentService documents)
+    {
+        try { return Results.Ok(await documents.ContextOptionsAsync(TenantContext.OrganizationId(context), customerId, Access(context), context.RequestAborted)); }
         catch (DocumentNotFoundException) { return Results.NotFound(); }
     }
 

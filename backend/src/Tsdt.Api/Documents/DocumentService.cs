@@ -78,7 +78,107 @@ public sealed class DocumentService(ApplicationDbContext db, IDocumentStorage st
         var documents = db.Database.ProviderName?.Contains("Sqlite") == true
             ? (await query.ToListAsync(cancellationToken)).OrderByDescending(document => document.UploadedAtUtc).ThenByDescending(document => document.Id).Skip((int)offset).Take(pageSize).ToList()
             : await query.OrderByDescending(document => document.UploadedAtUtc).ThenByDescending(document => document.Id).Skip((int)offset).Take(pageSize).ToListAsync(cancellationToken);
-        return new DocumentListResponse(documents.Select(Response).ToList(), page, pageSize, total);
+        var labels = await ContextLabelsAsync(organizationId, customerId, documents
+            .Where(document => document.ContextType.HasValue && document.ContextId.HasValue)
+            .Select(document => (document.ContextType!.Value, document.ContextId!.Value)).ToList(), cancellationToken);
+        var userIds = documents.Select(document => document.UploadedByUserId).Distinct().ToList();
+        var users = await db.Users.AsNoTracking()
+            .Where(user => user.OrganizationId == organizationId && userIds.Contains(user.Id))
+            .Select(user => new { user.Id, user.FullName }).ToDictionaryAsync(user => user.Id, user => user.FullName, cancellationToken);
+        return new DocumentListResponse(documents.Select(document => Response(document) with
+        {
+            ContextLabel = document.ContextType is null ? "Cliente" :
+                labels.GetValueOrDefault((document.ContextType.Value, document.ContextId!.Value), "Contexto indisponível"),
+            UploadedByName = users.GetValueOrDefault(document.UploadedByUserId, "Usuário indisponível")
+        }).ToList(), page, pageSize, total);
+    }
+
+    public async Task<IReadOnlyList<DocumentContextOption>> ContextOptionsAsync(Guid organizationId, Guid customerId,
+        DocumentAccessLevel access, CancellationToken cancellationToken = default)
+    {
+        if (access == DocumentAccessLevel.User) throw new DocumentNotFoundException();
+        if (!await db.Customers.AnyAsync(customer => customer.Id == customerId && customer.OrganizationId == organizationId, cancellationToken))
+            throw new DocumentNotFoundException();
+        var options = new List<DocumentContextOption> { new(DocumentContextType.Customer, customerId, "Cliente") };
+        options.AddRange(await UnitOptionsAsync(organizationId, customerId, cancellationToken));
+        options.AddRange(await db.WorkOrders.AsNoTracking().Where(order => order.CustomerId == customerId && order.OrganizationId == organizationId)
+            .OrderByDescending(order => order.Number).Select(order => new DocumentContextOption(DocumentContextType.WorkOrder, order.Id, "OS " + order.Number)).ToListAsync(cancellationToken));
+        if (access == DocumentAccessLevel.Admin)
+        {
+            options.AddRange(await db.Quotes.AsNoTracking().Where(quote => quote.CustomerId == customerId && quote.OrganizationId == organizationId)
+                .OrderByDescending(quote => quote.Number).Select(quote => new DocumentContextOption(DocumentContextType.Quote, quote.Id, "Orçamento " + quote.Number)).ToListAsync(cancellationToken));
+            options.AddRange(await ContractOptionsAsync(organizationId, customerId, cancellationToken));
+        }
+        return options;
+    }
+
+    private async Task<Dictionary<(DocumentContextType, Guid), string>> ContextLabelsAsync(Guid organizationId, Guid customerId,
+        IReadOnlyList<(DocumentContextType Type, Guid Id)> contexts, CancellationToken cancellationToken)
+    {
+        var labels = new Dictionary<(DocumentContextType, Guid), string>();
+        var ids = contexts.Select(context => context.Id).Distinct().ToList();
+        if (ids.Count == 0) return labels;
+        foreach (var id in contexts.Where(context => context.Type == DocumentContextType.Customer && context.Id == customerId).Select(context => context.Id))
+            labels[(DocumentContextType.Customer, id)] = "Cliente";
+        if (contexts.Any(context => context.Type == DocumentContextType.CustomerUnit))
+        {
+            var units = await UnitOptionsAsync(organizationId, customerId, cancellationToken);
+            foreach (var unit in units.Where(unit => ids.Contains(unit.Id)))
+                labels[(DocumentContextType.CustomerUnit, unit.Id)] = unit.Label;
+        }
+        var orders = await db.WorkOrders.AsNoTracking().Where(order => ids.Contains(order.Id) && order.CustomerId == customerId && order.OrganizationId == organizationId)
+            .Select(order => new { order.Id, order.Number }).ToListAsync(cancellationToken);
+        foreach (var order in orders) labels[(DocumentContextType.WorkOrder, order.Id)] = "OS " + order.Number;
+        if (contexts.Any(context => context.Type == DocumentContextType.Quote))
+        {
+            var quotes = await db.Quotes.AsNoTracking().Where(quote => ids.Contains(quote.Id) && quote.CustomerId == customerId && quote.OrganizationId == organizationId)
+                .Select(quote => new { quote.Id, quote.Number }).ToListAsync(cancellationToken);
+            foreach (var quote in quotes) labels[(DocumentContextType.Quote, quote.Id)] = "Orçamento " + quote.Number;
+        }
+        if (contexts.Any(context => context.Type == DocumentContextType.Contract))
+        {
+            var contracts = await ContractOptionsAsync(organizationId, customerId, cancellationToken);
+            foreach (var contract in contracts.Where(contract => ids.Contains(contract.Id)))
+                labels[(DocumentContextType.Contract, contract.Id)] = contract.Label;
+        }
+        return labels;
+    }
+
+    private async Task<IReadOnlyList<DocumentContextOption>> UnitOptionsAsync(Guid organizationId, Guid customerId,
+        CancellationToken cancellationToken)
+    {
+        var units = await db.CustomerUnits.AsNoTracking()
+            .Where(unit => unit.CustomerId == customerId && unit.Customer.OrganizationId == organizationId)
+            .Select(unit => new { unit.Id, unit.Name, unit.Street, unit.Number, unit.Complement, unit.City, unit.StateCode, unit.CreatedAtUtc })
+            .ToListAsync(cancellationToken);
+        var descriptions = units.Select(unit => new
+        {
+            unit.Id, unit.Name, unit.CreatedAtUtc,
+            Label = $"{unit.Name} — {unit.Street}, {unit.Number}{(string.IsNullOrWhiteSpace(unit.Complement) ? "" : ", " + unit.Complement)} — {unit.City}/{unit.StateCode}"
+        });
+        return descriptions.GroupBy(unit => unit.Label, StringComparer.OrdinalIgnoreCase)
+            .SelectMany(group => group.OrderBy(unit => unit.CreatedAtUtc).ThenBy(unit => unit.Id)
+                .Select((unit, index) => new DocumentContextOption(DocumentContextType.CustomerUnit, unit.Id,
+                    group.Count() == 1 ? unit.Label : $"{unit.Label} (unidade {index + 1})")))
+            .OrderBy(option => option.Label, StringComparer.OrdinalIgnoreCase).ThenBy(option => option.Id)
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<DocumentContextOption>> ContractOptionsAsync(Guid organizationId, Guid customerId,
+        CancellationToken cancellationToken)
+    {
+        var contracts = await (from contract in db.Contracts.AsNoTracking()
+            join quote in db.Quotes.AsNoTracking() on contract.QuoteId equals quote.Id
+            where contract.CustomerId == customerId && contract.OrganizationId == organizationId &&
+                quote.CustomerId == customerId && quote.OrganizationId == organizationId
+            select new { contract.Id, contract.QuoteId, contract.CreatedAtUtc, quote.Number }).ToListAsync(cancellationToken);
+        return contracts.GroupBy(contract => contract.QuoteId)
+            .SelectMany(group => group.OrderBy(contract => contract.CreatedAtUtc).ThenBy(contract => contract.Id)
+                .Select((contract, index) => new { contract.Id, contract.Number, Sequence = index + 1 }))
+            .OrderByDescending(contract => contract.Number).ThenByDescending(contract => contract.Sequence)
+            .Select(contract => new DocumentContextOption(DocumentContextType.Contract, contract.Id,
+                $"Contrato {contract.Sequence} do orçamento {contract.Number}"))
+            .ToList();
     }
 
     public async Task<DocumentDownload> DownloadAsync(Guid organizationId, Guid documentId, string actor, DocumentAccessLevel access, CancellationToken cancellationToken = default)
