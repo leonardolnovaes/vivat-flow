@@ -256,6 +256,43 @@ public sealed class DocumentServiceTests
         Assert.NotEqual(documents[originalDocument.Id], documents[replacementDocument.Id]);
     }
 
+    [Fact]
+    public async Task UnitsWithTheSameNameHaveDistinctLabelsInChoicesAndDocuments()
+    {
+        using var fixture = new Fixture();
+        var first = new CustomerUnit { Id = Guid.NewGuid(), CustomerId = fixture.CustomerA.Id, Name = "Depot",
+            Street = "Rua A", Number = "10", City = "Campinas", StateCode = "SP",
+            CreatedAtUtc = new DateTimeOffset(2025, 1, 10, 10, 0, 0, TimeSpan.Zero) };
+        var second = new CustomerUnit { Id = Guid.NewGuid(), CustomerId = fixture.CustomerA.Id, Name = "Depot",
+            Street = "Rua B", Number = "20", City = "Santos", StateCode = "SP",
+            CreatedAtUtc = first.CreatedAtUtc.AddDays(1) };
+        var sameAddress = new CustomerUnit { Id = Guid.NewGuid(), CustomerId = fixture.CustomerA.Id, Name = "Depot",
+            Street = "Rua A", Number = "10", City = "Campinas", StateCode = "SP",
+            CreatedAtUtc = first.CreatedAtUtc.AddDays(2) };
+        fixture.Db.CustomerUnits.AddRange(first, second, sameAddress);
+        await fixture.Db.SaveChangesAsync();
+        var documents = new Dictionary<Guid, Guid>();
+        foreach (var unit in new[] { first, second, sameAddress })
+        {
+            var document = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor",
+                fixture.Upload(fixture.CustomerA.Id, DocumentContextType.CustomerUnit, unit.Id));
+            documents.Add(document.Id, unit.Id);
+        }
+
+        var choices = (await fixture.Service.ContextOptionsAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, DocumentAccessLevel.Manager))
+            .Where(option => option.Type == DocumentContextType.CustomerUnit).ToDictionary(option => option.Id, option => option.Label);
+        Assert.Equal(3, choices.Count);
+        Assert.Equal(3, choices.Values.Distinct().Count());
+        Assert.Contains("Rua A, 10", choices[first.Id]);
+        Assert.Contains("Campinas/SP", choices[first.Id]);
+        Assert.Contains("Rua B, 20", choices[second.Id]);
+        Assert.EndsWith("(unidade 1)", choices[first.Id]);
+        Assert.EndsWith("(unidade 2)", choices[sameAddress.Id]);
+        var listed = (await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, "actor", DocumentAccessLevel.Manager)).Items;
+        foreach (var document in listed)
+            Assert.Equal(choices[documents[document.Id]], document.ContextLabel);
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly SqliteConnection connection = new("Data Source=:memory:");

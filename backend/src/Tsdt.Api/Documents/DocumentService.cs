@@ -100,8 +100,7 @@ public sealed class DocumentService(ApplicationDbContext db, IDocumentStorage st
         if (!await db.Customers.AnyAsync(customer => customer.Id == customerId && customer.OrganizationId == organizationId, cancellationToken))
             throw new DocumentNotFoundException();
         var options = new List<DocumentContextOption> { new(DocumentContextType.Customer, customerId, "Cliente") };
-        options.AddRange(await db.CustomerUnits.AsNoTracking().Where(unit => unit.CustomerId == customerId && unit.Customer.OrganizationId == organizationId)
-            .OrderBy(unit => unit.Name).Select(unit => new DocumentContextOption(DocumentContextType.CustomerUnit, unit.Id, unit.Name)).ToListAsync(cancellationToken));
+        options.AddRange(await UnitOptionsAsync(organizationId, customerId, cancellationToken));
         options.AddRange(await db.WorkOrders.AsNoTracking().Where(order => order.CustomerId == customerId && order.OrganizationId == organizationId)
             .OrderByDescending(order => order.Number).Select(order => new DocumentContextOption(DocumentContextType.WorkOrder, order.Id, "OS " + order.Number)).ToListAsync(cancellationToken));
         if (access == DocumentAccessLevel.Admin)
@@ -121,9 +120,12 @@ public sealed class DocumentService(ApplicationDbContext db, IDocumentStorage st
         if (ids.Count == 0) return labels;
         foreach (var id in contexts.Where(context => context.Type == DocumentContextType.Customer && context.Id == customerId).Select(context => context.Id))
             labels[(DocumentContextType.Customer, id)] = "Cliente";
-        var units = await db.CustomerUnits.AsNoTracking().Where(unit => ids.Contains(unit.Id) && unit.CustomerId == customerId && unit.Customer.OrganizationId == organizationId)
-            .Select(unit => new { unit.Id, unit.Name }).ToListAsync(cancellationToken);
-        foreach (var unit in units) labels[(DocumentContextType.CustomerUnit, unit.Id)] = unit.Name;
+        if (contexts.Any(context => context.Type == DocumentContextType.CustomerUnit))
+        {
+            var units = await UnitOptionsAsync(organizationId, customerId, cancellationToken);
+            foreach (var unit in units.Where(unit => ids.Contains(unit.Id)))
+                labels[(DocumentContextType.CustomerUnit, unit.Id)] = unit.Label;
+        }
         var orders = await db.WorkOrders.AsNoTracking().Where(order => ids.Contains(order.Id) && order.CustomerId == customerId && order.OrganizationId == organizationId)
             .Select(order => new { order.Id, order.Number }).ToListAsync(cancellationToken);
         foreach (var order in orders) labels[(DocumentContextType.WorkOrder, order.Id)] = "OS " + order.Number;
@@ -140,6 +142,26 @@ public sealed class DocumentService(ApplicationDbContext db, IDocumentStorage st
                 labels[(DocumentContextType.Contract, contract.Id)] = contract.Label;
         }
         return labels;
+    }
+
+    private async Task<IReadOnlyList<DocumentContextOption>> UnitOptionsAsync(Guid organizationId, Guid customerId,
+        CancellationToken cancellationToken)
+    {
+        var units = await db.CustomerUnits.AsNoTracking()
+            .Where(unit => unit.CustomerId == customerId && unit.Customer.OrganizationId == organizationId)
+            .Select(unit => new { unit.Id, unit.Name, unit.Street, unit.Number, unit.Complement, unit.City, unit.StateCode, unit.CreatedAtUtc })
+            .ToListAsync(cancellationToken);
+        var descriptions = units.Select(unit => new
+        {
+            unit.Id, unit.Name, unit.CreatedAtUtc,
+            Label = $"{unit.Name} — {unit.Street}, {unit.Number}{(string.IsNullOrWhiteSpace(unit.Complement) ? "" : ", " + unit.Complement)} — {unit.City}/{unit.StateCode}"
+        });
+        return descriptions.GroupBy(unit => unit.Label, StringComparer.OrdinalIgnoreCase)
+            .SelectMany(group => group.OrderBy(unit => unit.CreatedAtUtc).ThenBy(unit => unit.Id)
+                .Select((unit, index) => new DocumentContextOption(DocumentContextType.CustomerUnit, unit.Id,
+                    group.Count() == 1 ? unit.Label : $"{unit.Label} (unidade {index + 1})")))
+            .OrderBy(option => option.Label, StringComparer.OrdinalIgnoreCase).ThenBy(option => option.Id)
+            .ToList();
     }
 
     private async Task<IReadOnlyList<DocumentContextOption>> ContractOptionsAsync(Guid organizationId, Guid customerId,
