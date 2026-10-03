@@ -25,6 +25,12 @@ function problem(error: unknown, expired: () => void, fallback: string) {
   return fallback
 }
 
+function contextProblem(error: unknown, expired: () => void) {
+  if (error instanceof ApiError && error.status === 401) { expired(); return 'Sua sessão expirou. Entre novamente para continuar.' }
+  if (error instanceof ApiError && error.status === 403) return 'Seu perfil não permite consultar os vínculos disponíveis.'
+  return 'Não foi possível carregar os vínculos disponíveis. Você ainda pode enviar o documento sem contexto específico.'
+}
+
 export function CustomerDocuments({ customerId, roles, onSessionExpired }: { customerId: string; roles: string[]; onSessionExpired: () => void }) {
   const canUpload = roles.includes('ADMIN') || roles.includes('MANAGER')
   const isAdmin = roles.includes('ADMIN')
@@ -59,7 +65,7 @@ export function CustomerDocuments({ customerId, roles, onSessionExpired }: { cus
     {error && <div className="error-panel" role="alert"><p>{error}</p><button className="secondary" onClick={() => void load()}>Tentar novamente</button></div>}
     {downloadError && <p className="error" role="alert">{downloadError}</p>}
     {loading && !data ? <LoadingState /> : data && <>
-      {data.items.length === 0 ? <div className="empty-state" role="status"><h4>Nenhum documento cadastrado para este cliente.</h4><p>Os arquivos enviados aparecerão aqui.</p>{canUpload && <button onClick={() => setUploadOpen(true)}>Enviar documento</button>}</div> : <div className="document-list">{data.items.map(document => <article className="document-entry" key={document.id}>
+      {data.items.length === 0 ? <div className="empty-state" role="status"><h4>Nenhum documento cadastrado para este cliente.</h4><p>Os arquivos enviados aparecerão aqui.</p></div> : <div className="document-list">{data.items.map(document => <article className="document-entry" key={document.id}>
         <div className="document-entry-main"><strong>{document.fileName}</strong><span className={`document-purpose ${document.purpose === 'CustomerDeliverable' ? 'document-purpose-deliverable' : ''}`}>{purposes[document.purpose] ?? 'Finalidade não informada'}</span></div>
         <div className="document-entry-meta"><span>{categories[document.category] ?? 'Outra categoria'}</span><span>{document.contextLabel || 'Cliente'}</span><span>{new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(document.uploadedAtUtc))}</span><span>Enviado por {document.uploadedByName || 'usuário indisponível'}</span><span>{formatSize(document.sizeBytes)}</span></div>
         {document.description && <p className="document-description">{document.description}</p>}
@@ -89,7 +95,7 @@ function UploadDialog({ customerId, isAdmin, onSessionExpired, close, uploaded }
   useEffect(() => {
     let active = true
     listDocumentContexts(customerId).then(value => { if (active) setContexts(value) })
-      .catch(caught => { if (active) setContextError(problem(caught, onSessionExpired, 'Não foi possível carregar os contextos disponíveis.')) })
+      .catch(caught => { if (active) setContextError(contextProblem(caught, onSessionExpired)) })
       .finally(() => { if (active) setContextsLoading(false) })
     fileInput.current?.focus()
     return () => { active = false }
@@ -120,7 +126,7 @@ function UploadDialog({ customerId, isAdmin, onSessionExpired, close, uploaded }
       <label>Categoria *<select value={category} disabled={pending} onChange={event => setCategory(event.target.value as DocumentCategory)}>{available.map(item => <option key={item} value={item}>{categories[item]}</option>)}</select>{errors.category && <small className="error" role="alert">{errors.category[0]}</small>}</label>
       <label>Finalidade *<select value={purpose} disabled={pending} onChange={event => setPurpose(event.target.value as DocumentPurpose)}>{(Object.keys(purposes) as DocumentPurpose[]).map(item => <option key={item} value={item}>{purposes[item]}</option>)}</select>{errors.purpose && <small className="error" role="alert">{errors.purpose[0]}</small>}</label>
       <label>Relacionado a<select value={contextKey} disabled={pending || contextsLoading || Boolean(contextError)} onChange={event => setContextKey(event.target.value)}><option value="">Sem contexto específico</option>{contexts.map(item => <option key={`${item.type}:${item.id}`} value={`${item.type}:${item.id}`}>{item.label}</option>)}</select>{errors.contextType && <small className="error" role="alert">{errors.contextType[0]}</small>}{errors.contextId && <small className="error" role="alert">{errors.contextId[0]}</small>}</label>
-      {contextsLoading && <LoadingState size="sm" />}{contextError && <p className="error" role="alert">{contextError} Você ainda pode enviar o documento sem contexto específico.</p>}
+      {contextsLoading && <LoadingState size="sm" />}{contextError && <p className="error" role="alert">{contextError}</p>}
       <label>Descrição<textarea value={description} maxLength={1000} disabled={pending} onChange={event => setDescription(event.target.value)} />{errors.description && <small className="error" role="alert">{errors.description[0]}</small>}</label>
       <div className="actions"><button type="button" className="secondary" disabled={pending} onClick={close}>Cancelar</button><button disabled={pending}>{pending ? 'Enviando…' : 'Enviar documento'}</button></div>
     </form>
