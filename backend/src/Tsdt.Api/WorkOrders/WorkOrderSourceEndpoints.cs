@@ -22,31 +22,40 @@ public static class WorkOrderSourceEndpoints
         if (sourceType != WorkOrderSourceType.Contract)
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["sourceType"] = ["Selecione um contrato ativo como origem da OS."] });
 
-        var organizationId = TenantContext.OrganizationId(context);
+        if (search?.Trim().Length > 120)
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["search"] = ["Use no máximo 120 caracteres na busca."] });
+        return Results.Ok(await ListSourcesAsync(db, TenantContext.OrganizationId(context), search, page, pageSize));
+    }
+
+    public static async Task<WorkOrderSourceListResponse> ListSourcesAsync(ApplicationDbContext db, Guid organizationId, string? search, int? page, int? pageSize)
+    {
         var currentPage = Math.Max(page ?? 1, 1);
         var size = Math.Clamp(pageSize ?? 20, 1, 100);
         var term = search?.Trim().ToLowerInvariant();
-        if (term?.Length > 120) return Results.ValidationProblem(new Dictionary<string, string[]> { ["search"] = ["Use no máximo 120 caracteres na busca."] });
+        var cnpjTerm = term is not null && term.All(character => char.IsDigit(character) || character is '.' or '/' or '-' or ' ')
+            ? new string(term.Where(char.IsDigit).ToArray()) : "";
         var offset = ((long)currentPage - 1) * size;
 
         var query = from contract in db.Contracts.AsNoTracking()
                     join quote in db.Quotes.AsNoTracking() on contract.QuoteId equals quote.Id
-                    where contract.OrganizationId == organizationId && quote.OrganizationId == organizationId && contract.Status == ContractStatus.Active
-                        && contract.Items.Any() && quote.ServiceAddressSnapshot != null && quote.ServiceAddressSnapshot.Trim() != ""
-                        && !db.WorkOrders.Any(order => order.OrganizationId == organizationId &&
-                            (order.ContractId == contract.Id || (order.ContractId == null && order.QuoteId == quote.Id)) &&
-                            order.Status != WorkOrderStatus.Completed && order.Status != WorkOrderStatus.Cancelled)
-                    select new { contract, quote };
+                    join customer in db.Customers.AsNoTracking() on contract.CustomerId equals customer.Id
+                    where contract.OrganizationId == organizationId && quote.OrganizationId == organizationId
+                        && customer.OrganizationId == organizationId && contract.Status == ContractStatus.Active
+                    select new { contract, quote, customer };
         if (!string.IsNullOrWhiteSpace(term))
-            query = query.Where(item => item.contract.CustomerLegalNameSnapshot.ToLower().Contains(term) || item.quote.Number.ToLower().Contains(term));
+            query = query.Where(item => item.contract.CustomerLegalNameSnapshot.ToLower().Contains(term)
+                || item.customer.LegalName.ToLower().Contains(term)
+                || (item.customer.TradeName != null && item.customer.TradeName.ToLower().Contains(term))
+                || item.quote.Number.ToLower().Contains(term)
+                || (cnpjTerm != "" && item.customer.Cnpj.Contains(cnpjTerm)));
 
         var total = await query.CountAsync();
-        if (offset > int.MaxValue) return Results.Ok(new WorkOrderSourceListResponse([], currentPage, size, total));
+        if (offset > int.MaxValue) return new WorkOrderSourceListResponse([], currentPage, size, total);
         var rows = await query.OrderBy(item => item.contract.CustomerLegalNameSnapshot).ThenBy(item => item.quote.Number).ThenBy(item => item.contract.Id)
             .Skip((int)offset).Take(size)
             .Select(item => new SourceRow(item.contract.Id, item.quote.Id, item.quote.Number, item.contract.CustomerLegalNameSnapshot, item.quote.ServiceAddressSnapshot, item.contract.Status.ToString(), item.contract.Items.Count))
             .ToListAsync();
-        return Results.Ok(new WorkOrderSourceListResponse(await DecorateAsync(rows, organizationId, db), currentPage, size, total));
+        return new WorkOrderSourceListResponse(await DecorateAsync(rows, organizationId, db), currentPage, size, total);
     }
 
     private static async Task<IResult> GetAsync(Guid id, HttpContext context, ApplicationDbContext db)
@@ -84,14 +93,14 @@ public static class WorkOrderSourceEndpoints
                 .Where(item => item.Status is not (WorkOrderStatus.Completed or WorkOrderStatus.Cancelled))
                 .OrderBy(item => item.Id)
                 .FirstOrDefault();
-            var canCreate = row.Status == nameof(ContractStatus.Active)
-                && WorkOrderRules.CanCreateFromContract(ContractStatus.Active, contractOrders.Select(item => item.Status))
-                && !string.IsNullOrWhiteSpace(row.ServiceAddressSnapshot)
-                && row.ServiceCount > 0;
+            var reasons = new List<string>();
+            if (!WorkOrderRules.CanCreateFromContract(ContractStatus.Active, contractOrders.Select(item => item.Status))) reasons.Add("OpenWorkOrder");
+            if (string.IsNullOrWhiteSpace(row.ServiceAddressSnapshot)) reasons.Add("MissingServiceAddress");
+            if (row.ServiceCount == 0) reasons.Add("NoOperationalServices");
 
             return new WorkOrderSourceSummaryResponse(
                 row.Id, WorkOrderSourceType.Contract, row.QuoteId, row.Id, row.Reference, row.CustomerLegalNameSnapshot,
-                row.ServiceAddressSnapshot, row.Status, canCreate, null, null, current?.Id, current?.Number);
+                row.ServiceAddressSnapshot, row.Status, reasons.Count == 0, null, null, current?.Id, current?.Number, reasons);
         }).ToList();
     }
 }
