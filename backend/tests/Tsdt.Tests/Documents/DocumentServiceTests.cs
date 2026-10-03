@@ -223,6 +223,39 @@ public sealed class DocumentServiceTests
         await Assert.ThrowsAsync<DocumentNotFoundException>(() => fixture.Service.ContextOptionsAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, DocumentAccessLevel.User));
     }
 
+    [Fact]
+    public async Task ContractsFromTheSameQuoteHaveDistinctLabelsInChoicesAndDocuments()
+    {
+        using var fixture = new Fixture();
+        var order = fixture.AddCompletedOrder(fixture.CustomerA);
+        var original = await fixture.Db.Contracts.SingleAsync(contract => contract.Id == order.ContractId);
+        original.Status = ContractStatus.Ended;
+        original.CreatedAtUtc = new DateTimeOffset(2025, 1, 10, 10, 0, 0, TimeSpan.Zero);
+        var replacement = new Contract
+        {
+            Id = Guid.NewGuid(), OrganizationId = fixture.OrganizationA.Id, CustomerId = fixture.CustomerA.Id,
+            QuoteId = order.QuoteId, CustomerLegalNameSnapshot = fixture.CustomerA.LegalName,
+            Status = ContractStatus.Draft, CreatedAtUtc = original.CreatedAtUtc.AddDays(1),
+            CreatedByUserId = "actor", UpdatedByUserId = "actor"
+        };
+        fixture.Db.Contracts.Add(replacement);
+        await fixture.Db.SaveChangesAsync();
+        var originalDocument = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor",
+            fixture.Upload(fixture.CustomerA.Id, DocumentContextType.Contract, original.Id));
+        var replacementDocument = await fixture.Service.UploadAsync(fixture.OrganizationA.Id, "actor",
+            fixture.Upload(fixture.CustomerA.Id, DocumentContextType.Contract, replacement.Id));
+
+        var choices = (await fixture.Service.ContextOptionsAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, DocumentAccessLevel.Admin))
+            .Where(option => option.Type == DocumentContextType.Contract).ToDictionary(option => option.Id, option => option.Label);
+        Assert.Equal($"Contrato 1 do orçamento {(await fixture.Db.Quotes.SingleAsync(quote => quote.Id == order.QuoteId)).Number}", choices[original.Id]);
+        Assert.Equal(choices[original.Id].Replace("Contrato 1", "Contrato 2"), choices[replacement.Id]);
+        var documents = (await fixture.Service.ListAsync(fixture.OrganizationA.Id, fixture.CustomerA.Id, "actor", DocumentAccessLevel.Admin)).Items
+            .ToDictionary(document => document.Id, document => document.ContextLabel);
+        Assert.Equal(choices[original.Id], documents[originalDocument.Id]);
+        Assert.Equal(choices[replacement.Id], documents[replacementDocument.Id]);
+        Assert.NotEqual(documents[originalDocument.Id], documents[replacementDocument.Id]);
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly SqliteConnection connection = new("Data Source=:memory:");
