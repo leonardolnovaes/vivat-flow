@@ -35,14 +35,15 @@ internal static class TenantAdministratorEndpoints
             TemporaryPasswordGenerator passwordGenerator) =>
         {
             if (!await OrganizationEndpoints.IsValidCsrf(context, antiforgery)) return Results.BadRequest();
-            var organization = await db.Organizations.SingleOrDefaultAsync(item => item.Id == id);
-            if (organization is null) return Results.NotFound();
-            if (!OrganizationRules.CanProvisionTenantAdministrator(organization.Status)) return OrganizationNotEligible(organization.Status);
-
             var fullName = request.FullName?.Trim();
             var email = UserAdministrationSupport.NormalizeEmail(request.Email);
             if (UserAdministrationSupport.ValidateInput(fullName, email, IdentityRoles.Admin, validateRole: false) is { } validation) return validation;
             if (await users.FindByEmailAsync(email!) is not null) return DuplicateEmail();
+
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            var organization = (await ProvisioningOrganizationQuery(db, id).ToListAsync()).SingleOrDefault();
+            if (organization is null) return Results.NotFound();
+            if (!OrganizationRules.CanProvisionTenantAdministrator(organization.Status)) return OrganizationNotEligible(organization.Status);
 
             var temporaryPassword = passwordGenerator.Generate();
             var user = new ApplicationUser
@@ -55,8 +56,6 @@ internal static class TenantAdministratorEndpoints
                 MustChangePassword = true,
                 OrganizationId = organization.Id
             };
-
-            await using var transaction = await db.Database.BeginTransactionAsync();
             var creation = await users.CreateAsync(user, temporaryPassword);
             if (!creation.Succeeded)
             {
@@ -96,6 +95,11 @@ internal static class TenantAdministratorEndpoints
     }
 
     private static IResult DuplicateEmail() => Results.Conflict(new { errors = new Dictionary<string, string[]> { ["email"] = ["Já existe um usuário com este e-mail."] } });
+
+    internal static IQueryable<Organization> ProvisioningOrganizationQuery(ApplicationDbContext db, Guid id) =>
+        db.Database.IsNpgsql()
+            ? db.Organizations.FromSqlInterpolated($"SELECT * FROM \"Organizations\" WHERE \"Id\" = {id} FOR UPDATE")
+            : db.Organizations.Where(item => item.Id == id);
 
     private static IResult OrganizationNotEligible(OrganizationStatus status) => Results.Conflict(new
     {
