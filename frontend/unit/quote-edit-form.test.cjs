@@ -72,6 +72,9 @@ Module._load = function (name, parent, isMain) {
   if (name === './quoteFormat' && parent?.filename.endsWith('quoteApi.ts')) {
     return { normalizeBrlAmount: value => value.trim() || null }
   }
+  if (name === './quoteFormat' && parent?.filename.endsWith('QuotesRoutes.tsx')) {
+    return { formatBrlInput: value => value }
+  }
   if (name === './QuoteCommercialViews') return { QuoteDetailView: () => null, QuoteWorkspace: () => null }
   if (name === './QuickCustomerDialog') return { QuickCustomerDialog: () => null }
   if (name === '../../components/LoadingState') return { LoadingState: () => null }
