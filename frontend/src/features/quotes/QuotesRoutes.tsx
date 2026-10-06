@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
+import type { ChangeEvent, FormEvent, KeyboardEvent, ReactNode } from 'react'
 import { ApiError } from '../../api'
 import { LoadingState } from '../../components/LoadingState'
 import { QuoteDetailView, QuoteWorkspace } from './QuoteCommercialViews'
 import { getCustomer, listCustomers } from '../customers/customerApi'
 import { QuickCustomerDialog } from './QuickCustomerDialog'
+import { formatBrlInput } from './quoteFormat'
 import type { CustomerSummary, Unit } from '../customers/types'
 import { listServiceLines, listServices } from '../services/serviceApi'
 import type { ServiceLine, ServiceSummary } from '../services/types'
@@ -162,6 +163,30 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
     } finally { setPending(false) }
   }
 
+  const changeAmount = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const value = input.value
+    const separator = value.indexOf(',')
+    const fractionOffset = separator >= 0 && (input.selectionStart ?? 0) > separator ? (input.selectionStart ?? 0) - separator : 0
+    setForm(current => ({ ...current, totalAmount: value }))
+    requestAnimationFrame(() => {
+      const formattedSeparator = input.value.indexOf(',')
+      if (formattedSeparator >= 0 && document.activeElement === input) {
+        const cursor = formattedSeparator + fractionOffset
+        input.setSelectionRange(cursor, fractionOffset ? input.value.length : cursor)
+      }
+    })
+  }
+
+  const selectAmountFraction = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== ',' && event.key !== '.') return
+    const input = event.currentTarget
+    const separator = input.value.indexOf(',')
+    if (separator < 0) return
+    event.preventDefault()
+    input.setSelectionRange(separator + 1, input.value.length)
+  }
+
   const enabledServiceLineIds = new Set(serviceLines.map(line => line.id))
   const selectableServices = services.filter(service => enabledServiceLineIds.has(service.serviceLineId))
   const servicesByLine = serviceLines.map(line => ({ line, services: selectableServices.filter(service => service.serviceLineId === line.id) })).filter(group => group.services.length > 0)
@@ -182,11 +207,11 @@ function Form({ id, go, onSessionExpired }: Props & { id?: string }) {
       </section>
       {form.customerId && unitsLoaded && !units.length && <div className="unit-empty" role="status"><span>Este cliente não possui uma unidade ativa cadastrada. O rascunho pode ser salvo.</span><button type="button" className="secondary" onClick={() => { setCompletingCustomer(true); setQuick(true) }}>Completar cadastro do cliente</button></div>}
       <section className="selected-services" aria-label="Serviços adicionados"><h3>Serviços adicionados</h3>{form.items.length === 0 ? <p>Nenhum serviço adicionado.</p> : <div className="selected-service-grid">{form.items.map(item => { const service = services.find(candidate => candidate.id === item.serviceId); const historical = item.id ? existingItems[item.id] : undefined; return <div className="selected-service" key={item.id ?? item.serviceId}><div><strong>{service?.name ?? historical?.serviceNameSnapshot ?? 'Serviço histórico'}</strong><small>{service?.code ?? historical?.serviceCodeSnapshot ?? ''}</small><small className="service-line-label">{service?.serviceLineName ?? historical?.serviceLineName ?? 'Linha de serviço histórica'}</small></div><button className="secondary" type="button" onClick={() => setForm(current => ({ ...current, items: current.items.filter(candidate => candidate !== item) }))}>Remover</button></div> })}</div>}</section>
-      <section className="quote-form-grid commercial-fields" aria-label="Condições comerciais"><Field label="Valor total (R$)" error={errors.totalAmount}><input value={form.totalAmount} onChange={event => setForm(current => ({ ...current, totalAmount: event.target.value }))} /></Field><Field label="Condição de pagamento" error={errors.paymentType}><select value={form.paymentType} onChange={event => setForm(current => ({ ...current, paymentType: event.target.value as PaymentType | '' }))}><option value="">Não definida</option><option value="Cash">À vista</option><option value="Installments">Parcelado</option></select></Field>{form.paymentType === 'Installments' && <Field label="Quantidade de parcelas" error={errors.installmentCount}><input value={form.installmentCount} onChange={event => setForm(current => ({ ...current, installmentCount: event.target.value }))} /></Field>}</section>
+      <section className="quote-form-grid commercial-fields" aria-label="Condições comerciais"><Field label="Valor total (R$)" error={errors.totalAmount}><input inputMode="decimal" value={formatBrlInput(form.totalAmount)} onFocus={event => event.target.select()} onKeyDown={selectAmountFraction} onChange={changeAmount} /></Field><Field label="Condição de pagamento" error={errors.paymentType}><select value={form.paymentType} onChange={event => setForm(current => ({ ...current, paymentType: event.target.value as PaymentType | '' }))}><option value="">Não definida</option><option value="Cash">À vista</option><option value="Installments">Parcelado</option></select></Field>{form.paymentType === 'Installments' && <Field label="Quantidade de parcelas" error={errors.installmentCount}><input value={form.installmentCount} onChange={event => setForm(current => ({ ...current, installmentCount: event.target.value }))} /></Field>}</section>
       <Field className="quote-notes" label="Observações" error={errors.notes}><textarea value={form.notes} onChange={event => setForm(current => ({ ...current, notes: event.target.value }))} /></Field>
       <div className="actions quote-form-actions"><button type="button" className="secondary" onClick={() => go('/orcamentos')}>Cancelar</button><button disabled={pending || stale || loadingQuote || (Boolean(id) && !version)}>{pending ? 'Salvando...' : 'Salvar rascunho'}</button></div>
     </form>
-    {quick && <QuickCustomerDialog customerId={completingCustomer ? form.customerId : undefined} close={() => setQuick(false)} saved={(customer, unitId) => { void choose(customer, unitId); setQuick(false); setNotice('Dados do cliente salvos com sucesso.') }} />}
+    {quick && <QuickCustomerDialog customerId={completingCustomer ? form.customerId : undefined} close={() => setQuick(false)} saved={async (customer, unitId) => { await choose(customer, unitId); setQuick(false); setNotice('Dados do cliente salvos com sucesso.') }} />}
   </section>
 }
 

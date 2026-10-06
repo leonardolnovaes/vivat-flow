@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ApiError } from '../../api'
-import { createContact, createCustomer, createUnit, getCustomer } from '../customers/customerApi'
+import { createContact, createCustomer, createUnit, getCustomer, updateContact } from '../customers/customerApi'
 import type { Customer, UnitInput } from '../customers/types'
 
 type Props = {
@@ -22,11 +22,11 @@ export function QuickCustomerDialog({ customerId, close, saved }: Props) {
   const [contact, setContact] = useState({ name: '', email: '', phone: '' })
   const [errors, setErrors] = useState<Record<string, string[]>>({})
   const [pending, setPending] = useState(false)
-  useEffect(() => { if (customerId) void getCustomer(customerId).then(loaded => { setCustomer(loaded); setAddUnit(!loaded.units.some(item => item.isActive)); setAddContact(!loaded.contacts.some(item => item.isActive && item.email)) }).catch(() => setErrors({ customer: ['Não foi possível carregar o cliente.'] })) }, [customerId])
+  useEffect(() => { if (customerId) void getCustomer(customerId).then(loaded => { setCustomer(loaded); setAddUnit(!loaded.units.some(item => item.isActive)); setAddContact(!loaded.contacts.some(item => item.isActive && item.email)); const incomplete = loaded.contacts.find(item => item.isActive && !item.email); if (incomplete) setContact({ name: incomplete.name, email: '', phone: incomplete.phone ?? '' }) }).catch(() => setErrors({ customer: ['Não foi possível carregar o cliente.'] })) }, [customerId])
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
-    if (pending) return
+    if (pending || (customerId && !customer)) return
     setPending(true); setErrors({})
     try {
       let current = customer
@@ -36,7 +36,9 @@ export function QuickCustomerDialog({ customerId, close, saved }: Props) {
       }
       let unitId: string | undefined
       if (addContact) {
-        await createContact(current.id, { ...contact, roleOrDepartment: '', isPrimary: !current.contacts.some(item => item.isActive && item.isPrimary) }, current.version)
+        const incomplete = current.contacts.find(item => item.isActive && !item.email)
+        if (incomplete) await updateContact(current.id, incomplete.id, { ...contact, roleOrDepartment: incomplete.roleOrDepartment ?? '', isPrimary: incomplete.isPrimary }, current.version)
+        else await createContact(current.id, { ...contact, roleOrDepartment: '', isPrimary: !current.contacts.some(item => item.isActive && item.isPrimary) }, current.version)
         current = await getCustomer(current.id)
         setCustomer(current)
         setAddContact(false)
@@ -63,11 +65,11 @@ export function QuickCustomerDialog({ customerId, close, saved }: Props) {
   }
   return <div className="modal-backdrop"><section className="card modal quick-customer-dialog" role="dialog" aria-modal="true" aria-labelledby="quick-customer-title"><h2 id="quick-customer-title">{customerId ? 'Completar cadastro do cliente' : 'Cadastrar cliente rapidamente'}</h2><form onSubmit={save}>
     {!customerId && <><label>Razão social *<input value={legalName} required disabled={pending || Boolean(createdId)} onChange={event => setLegalName(event.target.value)}/>{errors.legalName?.map(item => <small className="error" key={item}>{item}</small>)}</label><label>CNPJ *<input value={cnpj} required disabled={pending || Boolean(createdId)} onChange={event => setCnpj(event.target.value)}/>{errors.cnpj?.map(item => <small className="error" key={item}>{item}</small>)}</label></>}
-    <label className="checkbox"><input type="checkbox" checked={addContact} disabled={pending} onChange={event => setAddContact(event.target.checked)}/>Adicionar contato para aprovação</label>
+    {!customerId && <label className="checkbox"><input type="checkbox" checked={addContact} disabled={pending} onChange={event => setAddContact(event.target.checked)}/>Adicionar contato para aprovação</label>}
     {addContact && <div className="quick-customer-fields"><label>Nome do contato *<input value={contact.name} required disabled={pending} onChange={event => setContact(value => ({ ...value, name: event.target.value }))}/></label><label>E-mail *<input type="email" value={contact.email} required disabled={pending} onChange={event => setContact(value => ({ ...value, email: event.target.value }))}/></label><label>Telefone<input value={contact.phone} disabled={pending} onChange={event => setContact(value => ({ ...value, phone: event.target.value }))}/></label>{['name','email','phone'].flatMap(key => errors[key]?.map(item => <small className="error" key={`${key}-${item}`}>{item}</small>) ?? [])}</div>}
-    <label className="checkbox"><input type="checkbox" checked={addUnit} disabled={pending} onChange={event => setAddUnit(event.target.checked)}/>Adicionar unidade/local do serviço</label>
+    {!customerId && <label className="checkbox"><input type="checkbox" checked={addUnit} disabled={pending} onChange={event => setAddUnit(event.target.checked)}/>Adicionar unidade/local do serviço</label>}
     {addUnit && <div className="quick-customer-fields"><label>Nome da unidade *<input value={unit.name} required disabled={pending} onChange={event => setUnit(value => ({ ...value, name: event.target.value }))}/></label><label>Rua *<input value={unit.street} required disabled={pending} onChange={event => setUnit(value => ({ ...value, street: event.target.value }))}/></label><label>Número *<input value={unit.number} required disabled={pending} onChange={event => setUnit(value => ({ ...value, number: event.target.value }))}/></label><label>Cidade *<input value={unit.city} required disabled={pending} onChange={event => setUnit(value => ({ ...value, city: event.target.value }))}/></label><label>UF *<input value={unit.stateCode} maxLength={2} required disabled={pending} onChange={event => setUnit(value => ({ ...value, stateCode: event.target.value.toUpperCase() }))}/></label>{['name','street','number','city','stateCode'].flatMap(key => errors[key]?.map(item => <small className="error" key={`${key}-${item}`}>{item}</small>) ?? [])}</div>}
     {errors.form?.map(item => <p className="error" role="alert" key={item}>{item}</p>)}{errors.customer?.map(item => <p className="error" role="alert" key={item}>{item}</p>)}
-    <div className="actions"><button disabled={pending}>{pending ? 'Salvando...' : customerId ? 'Salvar dados do cliente' : 'Cadastrar cliente'}</button><button className="secondary" type="button" disabled={pending} onClick={close}>Cancelar</button></div>
+    <div className="actions"><button disabled={pending || Boolean(customerId && !customer)}>{pending ? 'Salvando...' : customerId ? 'Salvar dados do cliente' : 'Cadastrar cliente'}</button><button className="secondary" type="button" disabled={pending} onClick={close}>Cancelar</button></div>
   </form></section></div>
 }
