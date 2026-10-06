@@ -143,6 +143,26 @@ public sealed class TenantAdministratorApiTests
         var otherOrganization = await CreateOrganizationAsync(factory);
         var createdResponse = await SendAsync(platform.Client, HttpMethod.Post, $"/api/platform/organizations/{organization.Id}/administrators", new CreateTenantAdministratorRequest("Audit Target", "audit-target@example.test"));
         Assert.Equal(HttpStatusCode.Created, createdResponse.StatusCode);
+        var created = await createdResponse.Content.ReadFromJsonAsync<CreateUserResponse>();
+        Assert.NotNull(created);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var targetUser = await users.FindByIdAsync(created.User.Id);
+            Assert.NotNull(targetUser);
+            targetUser.FullName = "Updated Audit Target";
+            targetUser.UserName = "updated-audit-target@example.test";
+            targetUser.Email = "updated-audit-target@example.test";
+            Assert.True((await users.UpdateAsync(targetUser)).Succeeded);
+
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var auditRecord = await db.OrganizationAuditRecords.SingleAsync(record => record.Action == "TENANT_ADMINISTRATOR_CREATED");
+            Assert.Equal(created.User.Id, auditRecord.TargetUserId);
+            Assert.Equal("Audit Target", auditRecord.TargetUserNameSnapshot);
+            Assert.Equal("audit-target@example.test", auditRecord.TargetUserEmailSnapshot);
+        }
+
         OrganizationEndpointsAudit(factory, otherOrganization.Id, platform.User.Id);
 
         var response = await platform.Client.GetFromJsonAsync<OrganizationAuditResponse[]>($"/api/platform/organizations/{organization.Id}/audit");
@@ -154,6 +174,12 @@ public sealed class TenantAdministratorApiTests
         Assert.Equal("audit-target@example.test", entry.TargetUserEmail);
         Assert.NotEqual(default, entry.OccurredAtUtc);
         Assert.DoesNotContain(response!, item => item.Action == "ORGANIZATION_UPDATED");
+
+        var otherOrganizationResponse = await platform.Client.GetFromJsonAsync<OrganizationAuditResponse[]>($"/api/platform/organizations/{otherOrganization.Id}/audit");
+        var otherOrganizationEntry = Assert.Single(otherOrganizationResponse!);
+        Assert.Equal("ORGANIZATION_UPDATED", otherOrganizationEntry.Action);
+        Assert.Null(otherOrganizationEntry.TargetUserName);
+        Assert.Null(otherOrganizationEntry.TargetUserEmail);
     }
 
     private static async Task<PlatformClient> CreatePlatformClientAsync(IdentityWebApplicationFactory factory)

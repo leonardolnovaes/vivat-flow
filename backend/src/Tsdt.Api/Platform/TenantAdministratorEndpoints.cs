@@ -66,7 +66,7 @@ internal static class TenantAdministratorEndpoints
             var assignment = await users.AddToRoleAsync(user, IdentityRoles.Admin);
             if (!assignment.Succeeded) return UserAdministrationSupport.ValidationProblem(assignment);
 
-            OrganizationEndpoints.AddAudit(db, organization.Id, await OrganizationEndpoints.Actor(context, users), "TENANT_ADMINISTRATOR_CREATED", user.Id);
+            OrganizationEndpoints.AddAudit(db, organization.Id, await OrganizationEndpoints.Actor(context, users), "TENANT_ADMINISTRATOR_CREATED", targetUserId: user.Id, targetUserNameSnapshot: user.FullName, targetUserEmailSnapshot: user.Email);
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
 
@@ -82,11 +82,8 @@ internal static class TenantAdministratorEndpoints
                 from record in db.OrganizationAuditRecords.AsNoTracking()
                 where record.OrganizationId == id
                 join actor in db.Users.AsNoTracking() on record.ActorUserId equals actor.Id
-                join targetUser in db.Users.AsNoTracking().Where(user => user.OrganizationId == id && !user.IsPlatformAdministrator)
-                    on record.TargetUserId equals targetUser.Id into targetUsers
-                from target in targetUsers.DefaultIfEmpty()
                 orderby record.OccurredAtUtc descending, record.Id
-                select new OrganizationAuditResponse(record.Id, record.Action, actor.FullName, target == null ? null : target.FullName, target == null ? null : target.Email, record.OccurredAtUtc))
+                select new OrganizationAuditResponse(record.Id, record.Action, actor.FullName, record.TargetUserNameSnapshot, record.TargetUserEmailSnapshot, record.OccurredAtUtc))
                 .Take(100)
                 .ToListAsync();
 
