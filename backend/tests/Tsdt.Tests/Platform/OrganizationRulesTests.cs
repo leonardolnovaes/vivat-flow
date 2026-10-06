@@ -41,4 +41,11 @@ public sealed class OrganizationRulesTests
     [InlineData(true, false, null, true)]
     public void Tenant_access_requires_active_organization_unless_platform_administrator(bool platformAdmin, bool hasOrganization, OrganizationStatus? status, bool expected) =>
         Assert.Equal(expected, OrganizationAccess.IsTenantAccessAllowed(platformAdmin, hasOrganization ? Guid.NewGuid() : null, status));
+
+    [Theory]
+    [InlineData(OrganizationStatus.Active, true)]
+    [InlineData(OrganizationStatus.Suspended, false)]
+    [InlineData(OrganizationStatus.Deactivated, false)]
+    public void Tenant_administrator_provisioning_requires_an_active_organization(OrganizationStatus status, bool expected) =>
+        Assert.Equal(expected, OrganizationRules.CanProvisionTenantAdministrator(status));
 }

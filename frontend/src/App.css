@@ -200,3 +200,15 @@ main:has(.quote-summary) .table-wrap tbody td:nth-child(3), main:has(.quote-summ
 .wo-business-actions { display:flex; flex-wrap:wrap; gap:.6rem; width:100%; }
 .wo-business-actions .wo-hint { flex-basis:100%; order:2; }
 @media(max-width:560px) { .wo-business-actions > button { flex:1 1 100%; } }
+
+.platform-admin-password-hint { display:block; margin-top:.2rem; color:#526176; }
+.platform-admin-cards { display:none; }
+.platform-audit-list { display:grid; gap:1rem; margin:0; padding:0 0 0 1.25rem; border-left:2px solid #dce7f2; }
+.platform-audit-list li { padding-left:.65rem; }
+.platform-audit-list li::marker { color:#0b5cab; }
+.platform-audit-list time { color:#526176; font-size:.85rem; }
+.platform-audit-list p { margin:.25rem 0 0; overflow-wrap:anywhere; }
+.temporary-password-value { padding:.8rem; border:1px solid #dce7f2; border-radius:.5rem; background:#f7fafe; overflow-wrap:anywhere; }
+.password-saved-confirmation { display:flex; align-items:flex-start; gap:.55rem; margin-top:1rem; }
+.password-saved-confirmation input { flex:0 0 auto; width:1.1rem; height:1.1rem; margin-top:.15rem; }
+@media(max-width:760px) { .platform-admin-table { display:none; } .platform-admin-cards { display:grid; gap:.75rem; } }
