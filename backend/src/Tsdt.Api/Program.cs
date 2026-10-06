@@ -313,7 +313,7 @@ adminUsers.MapPut("/{id}/role", async (string id, ChangeUserRoleRequest request,
 {
     if (!await ValidateAntiforgeryAsync(context, antiforgery)) return Results.BadRequest();
     var role = request.Role?.Trim().ToUpperInvariant();
-    if (!IsApplicationRole(role)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["role"] = ["O perfil informado não é válido."] });
+    if (!UserAdministrationSupport.IsApplicationRole(role)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["role"] = ["O perfil informado não é válido."] });
     await using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
     var user = await userManager.FindByIdAsync(id);
     if (user is null) return Results.NotFound();
@@ -387,24 +387,14 @@ static async Task<CurrentUserResponse> CreateCurrentUserResponseAsync(Applicatio
     return new CurrentUserResponse(user.Id, user.FullName, user.Email!, roles.ToArray(), user.MustChangePassword, user.IsPlatformAdministrator, user.PreferredLocale, organization);
 }
 
-static async Task<UserAdministrationResponse> CreateUserAdministrationResponseAsync(ApplicationUser user, UserManager<ApplicationUser> userManager) => new(user.Id, user.FullName, user.Email!, (await userManager.GetRolesAsync(user)).ToArray(), user.IsActive, user.MustChangePassword);
-static bool IsApplicationRole(string? role) => role is IdentityRoles.Admin or IdentityRoles.Manager or IdentityRoles.User;
+static Task<UserAdministrationResponse> CreateUserAdministrationResponseAsync(ApplicationUser user, UserManager<ApplicationUser> userManager) => UserAdministrationSupport.CreateResponseAsync(user, userManager);
 static async Task<bool> ValidateAntiforgeryAsync(HttpContext context, IAntiforgery antiforgery)
 {
     try { await antiforgery.ValidateRequestAsync(context); return true; }
     catch (AntiforgeryValidationException) { return false; }
 }
-static IResult? ValidateUserInput(string? fullName, string? email, string? role, bool validateRole = true)
-{
-    var errors = new Dictionary<string, string[]>();
-    if (string.IsNullOrWhiteSpace(fullName)) errors["fullName"] = ["Informe o nome completo."];
-    else if (fullName.Length > 120) errors["fullName"] = ["O nome completo deve ter no máximo 120 caracteres."];
-    if (string.IsNullOrWhiteSpace(email)) errors["email"] = ["Informe o e-mail."];
-    else if (email.Length > 254 || !System.Net.Mail.MailAddress.TryCreate(email, out _)) errors["email"] = ["Informe um e-mail válido com no máximo 254 caracteres."];
-    if (validateRole && !IsApplicationRole(role)) errors["role"] = ["Selecione um perfil válido."];
-    return errors.Count == 0 ? null : Results.ValidationProblem(errors);
-}
-static string? NormalizeEmail(string? email) => string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
+static IResult? ValidateUserInput(string? fullName, string? email, string? role, bool validateRole = true) => UserAdministrationSupport.ValidateInput(fullName, email, role, validateRole);
+static string? NormalizeEmail(string? email) => UserAdministrationSupport.NormalizeEmail(email);
 static string PasswordPolicyDescription(PasswordOptions password)
 {
     var requirements = new List<string> { $"pelo menos {password.RequiredLength} caracteres" };
@@ -414,19 +404,7 @@ static string PasswordPolicyDescription(PasswordOptions password)
     if (password.RequireNonAlphanumeric) requirements.Add("símbolo");
     return $"A senha deve ter {string.Join(", ", requirements)}.";
 }
-static IResult IdentityValidationProblem(IdentityResult result, string fallbackField = "identity", string? passwordDescription = null)
-{
-    var errors = result.Errors.Select(error => error.Code switch
-    {
-        "PasswordTooShort" => passwordDescription ?? "A senha não atende aos requisitos.",
-        "PasswordRequiresNonAlphanumeric" => passwordDescription ?? "A senha não atende aos requisitos.",
-        "PasswordRequiresDigit" => passwordDescription ?? "A senha não atende aos requisitos.",
-        "PasswordRequiresLower" => passwordDescription ?? "A senha não atende aos requisitos.",
-        "PasswordRequiresUpper" => passwordDescription ?? "A senha não atende aos requisitos.",
-        _ => "Não foi possível concluir a solicitação."
-    }).Distinct().ToArray();
-    return Results.ValidationProblem(new Dictionary<string, string[]> { [fallbackField] = errors });
-}
+static IResult IdentityValidationProblem(IdentityResult result, string fallbackField = "identity", string? passwordDescription = null) => UserAdministrationSupport.ValidationProblem(result, fallbackField, passwordDescription);
 static async Task<string> GetActorUserIdAsync(HttpContext context, UserManager<ApplicationUser> userManager) => (await userManager.GetUserAsync(context.User))?.Id ?? throw new UnauthorizedAccessException();
 static async Task<bool> IsLastActiveAdminAsync(ApplicationDbContext dbContext) => await dbContext.UserRoles.Join(dbContext.Roles, userRole => userRole.RoleId, role => role.Id, (userRole, role) => new { userRole.UserId, role.Name }).Join(dbContext.Users, item => item.UserId, user => user.Id, (item, user) => new { item.Name, user.IsActive }).CountAsync(item => item.IsActive && item.Name == IdentityRoles.Admin) == 1;
 static async Task AddAuditAsync(ApplicationDbContext dbContext, string actorUserId, string targetUserId, string action, string? oldRole = null, string? newRole = null)

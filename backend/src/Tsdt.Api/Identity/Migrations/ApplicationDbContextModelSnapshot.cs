@@ -828,6 +828,10 @@ namespace Tsdt.Api.Identity.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("TargetUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
                     b.Property<DateTimeOffset>("OccurredAtUtc")
                         .HasColumnType("timestamp with time zone");
 
