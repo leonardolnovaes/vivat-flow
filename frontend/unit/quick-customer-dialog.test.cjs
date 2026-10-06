@@ -20,6 +20,7 @@ for (const extension of ['.ts', '.tsx']) require.extensions[extension] = (module
 
 let customer
 const writes = []
+let failContact = false
 const originalLoad = Module._load
 Module._load = function (name, parent, isMain) {
   if (name === '../../api') return { ApiError: class ApiError extends Error {} }
@@ -28,19 +29,25 @@ Module._load = function (name, parent, isMain) {
     createCustomer: async () => { throw new Error('Existing customer expected') },
     createContact: async (id, input, version) => {
       assert.equal(id, customer.id); assert.equal(version, customer.version)
+      if (failContact) throw new Error('contact persistence failed')
       writes.push({ kind: 'contact', input })
-      customer = { ...customer, version: 'v2', contacts: [{ id: 'contact-id', isActive: true, ...input }] }
+      const contact = { id: 'contact-id', customerId: id, isActive: true, ...input }
+      customer = { ...customer, version: 'v2', contacts: [contact] }
+      return { contact, version: customer.version }
     },
     updateContact: async (id, contactId, input, version) => {
       assert.equal(id, customer.id); assert.equal(contactId, customer.contacts[0].id); assert.equal(version, customer.version)
       writes.push({ kind: 'contact-update', input })
-      customer = { ...customer, version: 'v2', contacts: [{ ...customer.contacts[0], ...input }] }
+      const contact = { ...customer.contacts[0], ...input }
+      customer = { ...customer, version: 'v2', contacts: [contact] }
+      return { contact, version: customer.version }
     },
     createUnit: async (id, input, version) => {
       assert.equal(id, customer.id); assert.equal(version, customer.version)
       writes.push({ kind: 'unit', input })
-      customer = { ...customer, version: 'v3', units: [{ id: 'unit-id', isActive: true, ...input }] }
-      return { unit: { id: 'unit-id' } }
+      const unit = { id: 'unit-id', customerId: id, isActive: true, ...input }
+      customer = { ...customer, version: 'v3', units: [unit] }
+      return { unit, version: customer.version }
     },
   }
   return originalLoad.call(this, name, parent, isMain)
@@ -58,6 +65,7 @@ function fill(container, label, value) {
 test('quick completion persists a contact and unit using the refreshed customer version', async () => {
   customer = { id: 'customer-id', version: 'v1', contacts: [], units: [] }
   writes.length = 0
+  failContact = false
   const saved = []
   const root = createRoot(document.getElementById('root'))
   await act(async () => { root.render(React.createElement(QuickCustomerDialog, { customerId: customer.id, close: () => {}, saved: (...args) => saved.push(args) })); await flush() })
@@ -78,6 +86,7 @@ test('quick completion persists a contact and unit using the refreshed customer 
 test('quick completion fills an existing contact without creating a duplicate', async () => {
   customer = { id: 'customer-id', version: 'v1', contacts: [{ id: 'contact-id', name: 'Ana', email: null, phone: '123', roleOrDepartment: 'Compras', isPrimary: true, isActive: true }], units: [{ id: 'unit-id', isActive: true }] }
   writes.length = 0
+  failContact = false
   const saved = []
   const root = createRoot(document.getElementById('root'))
   await act(async () => { root.render(React.createElement(QuickCustomerDialog, { customerId: customer.id, close: () => {}, saved: (...args) => saved.push(args) })); await flush() })
@@ -89,5 +98,71 @@ test('quick completion fills an existing contact without creating a duplicate', 
   assert.equal(writes[0].input.roleOrDepartment, 'Compras')
   assert.equal(customer.contacts.length, 1)
   assert.equal(saved.length, 1)
+  await act(async () => root.unmount())
+})
+
+async function renderDialog(saved, onClose = () => {}) {
+  const root = createRoot(document.getElementById('root'))
+  const close = () => { onClose(); root.render(null) }
+  const saveAndClose = async (...args) => { await saved(...args); close() }
+  await act(async () => { root.render(React.createElement(QuickCustomerDialog, { customerId: customer.id, close, saved: saveAndClose })); await flush() })
+  const container = document.getElementById('root')
+  await act(async () => {
+    for (const [label, value] of [['Nome do contato', 'Ana'], ['E-mail', 'ana@example.com'], ['Nome da unidade', 'Matriz'], ['Rua', 'Rua A'], ['Número', '10'], ['Cidade', 'São Paulo'], ['UF', 'SP']]) fill(container, label, value)
+  })
+  return { root, container }
+}
+
+test('customer persistence failure is reported as a save failure', async () => {
+  customer = { id: 'customer-id', version: 'v1', contacts: [], units: [] }
+  writes.length = 0
+  failContact = true
+  const { root, container } = await renderDialog(async () => {})
+  await act(async () => { container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); await flush() })
+  assert.match(container.querySelector('[role="alert"]').textContent, /Não foi possível salvar o cliente/)
+  assert.equal(container.querySelector('[role="dialog"]') !== null, true)
+  assert.equal(writes.length, 0)
+  await act(async () => root.unmount())
+})
+
+test('refresh failure after successful customer writes is reported as a synchronization failure', async () => {
+  customer = { id: 'customer-id', version: 'v1', contacts: [], units: [] }
+  writes.length = 0
+  failContact = false
+  let failRefresh = true
+  let closed = false
+  const { root, container } = await renderDialog(async () => {
+    if (failRefresh) {
+      failRefresh = false
+      throw new Error('Os dados foram salvos, mas não foi possível atualizar a tela. Tente recarregar.')
+    }
+  }, () => { closed = true })
+  await act(async () => { container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); await flush() })
+  assert.equal(writes.length, 2)
+  assert.match(container.querySelector('[role="alert"]').textContent, /Os dados foram salvos, mas não foi possível atualizar a tela/)
+  assert.doesNotMatch(container.querySelector('[role="alert"]').textContent, /Não foi possível salvar o cliente/)
+  assert.equal(container.querySelector('[role="dialog"]') !== null, true)
+  assert.equal(container.querySelector('input[type="email"]').value, 'ana@example.com')
+  assert.equal(container.querySelector('input[type="email"]').disabled, true)
+  assert.equal(container.querySelector('button').textContent, 'Tentar atualizar tela')
+  assert.equal(closed, false)
+  await act(async () => { container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); await flush() })
+  assert.equal(writes.length, 2)
+  assert.equal(closed, true)
+  assert.equal(container.querySelector('[role="dialog"]'), null)
+  await act(async () => root.unmount())
+})
+
+test('successful customer writes and refresh callback complete normally', async () => {
+  customer = { id: 'customer-id', version: 'v1', contacts: [], units: [] }
+  writes.length = 0
+  failContact = false
+  let completed = false
+  const { root, container } = await renderDialog(async () => { completed = true })
+  await act(async () => { container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); await flush() })
+  assert.equal(completed, true)
+  assert.equal(writes.length, 2)
+  assert.equal(container.querySelector('[role="alert"]'), null)
+  assert.equal(container.querySelector('[role="dialog"]'), null)
   await act(async () => root.unmount())
 })
