@@ -105,7 +105,7 @@ function Get-PostgresContainerId {
 }
 
 function Invoke-DemoPsql([string]$ContainerId, [hashtable]$LocalValues, [string]$Database, [string]$Query) {
-    $result = @(& docker exec $ContainerId psql -U $LocalValues['POSTGRES_USER'] -d $Database -t -A -c $Query)
+    $result = @($Query | & docker exec -i $ContainerId psql -U $LocalValues['POSTGRES_USER'] -d $Database -t -A)
     if ($LASTEXITCODE -ne 0) { throw "Could not query the persistent DEMO database '$Database'." }
     return @($result | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
@@ -157,7 +157,7 @@ function Ensure-DemoWorktree([string]$Commit) {
 function Get-PendingMigrations([string]$ContainerId, [hashtable]$LocalValues) {
     $migrationDirectory = Join-Path $demoWorktree 'backend\src\Tsdt.Api\Identity\Migrations'
     if (-not (Test-Path $migrationDirectory)) { throw "Migration directory is missing from the DEMO worktree: $migrationDirectory" }
-    $expected = @(Get-ChildItem -Path $migrationDirectory -Filter '*.cs' | Where-Object Name -match '^\d+_.+\.cs$' | ForEach-Object BaseName)
+    $expected = @(Get-ChildItem -Path $migrationDirectory -Filter '*.cs' | Where-Object Name -match '^\d+_.+\.cs$' | Where-Object Name -notmatch '\.Designer\.cs$' | ForEach-Object BaseName)
     $applied = @(Invoke-DemoPsql $ContainerId $LocalValues $databaseName 'SELECT "MigrationId" FROM "__EFMigrationsHistory";')
     return @($expected | Where-Object { $_ -notin $applied })
 }
@@ -185,7 +185,7 @@ function Restore-DemoDependencies {
     if ($LASTEXITCODE -ne 0) { throw 'Could not restore the DEMO backend dependencies.' }
     Push-Location $frontendDirectory
     try {
-        & npm ci
+        & npm ci --legacy-peer-deps
         if ($LASTEXITCODE -ne 0) { throw 'Could not install the DEMO frontend dependencies.' }
     }
     finally { Pop-Location }
