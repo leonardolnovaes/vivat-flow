@@ -53,6 +53,7 @@ Module._load = function (name, parent, isMain) {
   return originalLoad.call(this, name, parent, isMain)
 }
 const { QuickCustomerDialog } = require('../src/features/quotes/QuickCustomerDialog.tsx')
+const { synchronizeCustomerCompletion } = require('../src/features/quotes/quoteCompletion.ts')
 Module._load = originalLoad
 
 const flush = () => new Promise(resolve => setImmediate(resolve))
@@ -101,11 +102,11 @@ test('quick completion fills an existing contact without creating a duplicate', 
   await act(async () => root.unmount())
 })
 
-async function renderDialog(saved, onClose = () => {}) {
+async function renderDialog(saved, onClose = () => {}, retryLabel) {
   const root = createRoot(document.getElementById('root'))
   const close = () => { onClose(); root.render(null) }
   const saveAndClose = async (...args) => { await saved(...args); close() }
-  await act(async () => { root.render(React.createElement(QuickCustomerDialog, { customerId: customer.id, close, saved: saveAndClose })); await flush() })
+  await act(async () => { root.render(React.createElement(QuickCustomerDialog, { customerId: customer.id, close, saved: saveAndClose, retryLabel })); await flush() })
   const container = document.getElementById('root')
   await act(async () => {
     for (const [label, value] of [['Nome do contato', 'Ana'], ['E-mail', 'ana@example.com'], ['Nome da unidade', 'Matriz'], ['Rua', 'Rua A'], ['Número', '10'], ['Cidade', 'São Paulo'], ['UF', 'SP']]) fill(container, label, value)
@@ -163,6 +164,63 @@ test('successful customer writes and refresh callback complete normally', async 
   assert.equal(completed, true)
   assert.equal(writes.length, 2)
   assert.equal(container.querySelector('[role="alert"]'), null)
+  assert.equal(container.querySelector('[role="dialog"]'), null)
+  await act(async () => root.unmount())
+})
+
+test('Quote completion recovers a 409 and retries with the refreshed version without repeating contact or unit writes', async () => {
+  customer = { id: 'customer-id', version: 'v1', contacts: [], units: [] }
+  writes.length = 0
+  failContact = false
+  let parentQuote = {
+    id: 'quote-id', customerId: customer.id, version: 'quote-v1', status: 'Draft', serviceUnitId: null,
+    items: [{ id: 'item-1', serviceId: 'service-1' }], totalAmount: 100,
+    paymentType: 'Cash', installmentCount: null, employeeCount: 10,
+    riskDegree: 'One', responsibleUserId: null, notes: null,
+  }
+  const updateVersions = []
+  const currentQuotes = [
+    { ...parentQuote, version: 'quote-v2' },
+    { ...parentQuote, version: 'quote-v3', serviceUnitId: 'unit-id' },
+  ]
+  let quoteFetches = 0
+  let validationRefreshes = 0
+  const api = {
+    updateQuote: async (id, input, version) => {
+      updateVersions.push(version)
+      if (updateVersions.length === 1) throw Object.assign(new Error('stale Quote'), { status: 409 })
+      return { ...parentQuote, ...input, version: 'quote-v3' }
+    },
+    getQuote: async () => { quoteFetches++; return currentQuotes.shift() },
+    getApprovalValidation: async () => { validationRefreshes++; return { errors: { contact: ['Contato obrigatório.'] } } },
+    quoteUpdated: loaded => { parentQuote = loaded },
+    refreshed: loaded => { parentQuote = loaded },
+  }
+  let closed = false
+  const { root, container } = await renderDialog(async (savedCustomer, unitId) => {
+    const result = await synchronizeCustomerCompletion(parentQuote, unitId || savedCustomer.units.find(item => item.isActive)?.id, api)
+    if (result.status === 'conflict') throw new Error('Os dados do cliente já foram salvos. O orçamento mudou e os dados atuais foram recarregados. Você pode tentar novamente se ele ainda estiver como rascunho.')
+    if (result.status === 'not-draft') throw new Error('Os dados do cliente já foram salvos, mas o orçamento não está mais como rascunho.')
+  }, () => { closed = true }, 'Tentar vincular unidade')
+
+  await act(async () => { container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); await flush() })
+  assert.deepEqual(writes.map(write => write.kind), ['contact', 'unit'])
+  assert.deepEqual(updateVersions, ['quote-v1'])
+  assert.equal(quoteFetches, 1)
+  assert.equal(validationRefreshes, 1)
+  assert.equal(parentQuote.version, 'quote-v2')
+  assert.match(container.querySelector('[role="alert"]').textContent, /já foram salvos.*mudou.*recarregados/i)
+  assert.equal(container.querySelector('button').textContent, 'Tentar vincular unidade')
+  assert.equal(closed, false)
+
+  await act(async () => { container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); await flush() })
+  assert.deepEqual(writes.map(write => write.kind), ['contact', 'unit'])
+  assert.deepEqual(updateVersions, ['quote-v1', 'quote-v2'])
+  assert.equal(quoteFetches, 2)
+  assert.equal(validationRefreshes, 2)
+  assert.equal(parentQuote.version, 'quote-v3')
+  assert.equal(parentQuote.serviceUnitId, 'unit-id')
+  assert.equal(closed, true)
   assert.equal(container.querySelector('[role="dialog"]'), null)
   await act(async () => root.unmount())
 })

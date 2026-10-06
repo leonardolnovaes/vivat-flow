@@ -7,11 +7,12 @@ type Props = {
   customerId?: string
   close: () => void
   saved: (customer: Customer, unitId?: string) => void | Promise<void>
+  retryLabel?: string
 }
 
 const emptyUnit: UnitInput = { name: '', street: '', number: '', complement: '', district: '', city: '', stateCode: '', postalCode: '', isPrimary: true }
 
-export function QuickCustomerDialog({ customerId, close, saved }: Props) {
+export function QuickCustomerDialog({ customerId, close, saved, retryLabel }: Props) {
   const [createdId, setCreatedId] = useState(customerId)
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [legalName, setLegalName] = useState('')
@@ -93,6 +94,6 @@ export function QuickCustomerDialog({ customerId, close, saved }: Props) {
     {!customerId && <label className="checkbox"><input type="checkbox" checked={addUnit} disabled={pending} onChange={event => setAddUnit(event.target.checked)}/>Adicionar unidade/local do serviço</label>}
     {addUnit && <div className="quick-customer-fields"><label>Nome da unidade *<input value={unit.name} required disabled={pending || unitPersisted} onChange={event => setUnit(value => ({ ...value, name: event.target.value }))}/></label><label>Rua *<input value={unit.street} required disabled={pending || unitPersisted} onChange={event => setUnit(value => ({ ...value, street: event.target.value }))}/></label><label>Número *<input value={unit.number} required disabled={pending || unitPersisted} onChange={event => setUnit(value => ({ ...value, number: event.target.value }))}/></label><label>Cidade *<input value={unit.city} required disabled={pending || unitPersisted} onChange={event => setUnit(value => ({ ...value, city: event.target.value }))}/></label><label>UF *<input value={unit.stateCode} maxLength={2} required disabled={pending || unitPersisted} onChange={event => setUnit(value => ({ ...value, stateCode: event.target.value.toUpperCase() }))}/></label>{['name','street','number','city','stateCode'].flatMap(key => errors[key]?.map(item => <small className="error" key={`${key}-${item}`}>{item}</small>) ?? [])}</div>}
     {errors.form?.map(item => <p className="error" role="alert" key={item}>{item}</p>)}{errors.customer?.map(item => <p className="error" role="alert" key={item}>{item}</p>)}
-    <div className="actions"><button disabled={pending || Boolean(customerId && !customer)}>{pending ? 'Salvando...' : customerId && (contactPersisted || unitPersisted) && (!addContact || contactPersisted) && (!addUnit || unitPersisted) ? 'Tentar atualizar tela' : customerId ? 'Salvar dados do cliente' : 'Cadastrar cliente'}</button><button className="secondary" type="button" disabled={pending} onClick={close}>Cancelar</button></div>
+    <div className="actions"><button disabled={pending || Boolean(customerId && !customer)}>{pending ? 'Salvando...' : customerId && (contactPersisted || unitPersisted) && (!addContact || contactPersisted) && (!addUnit || unitPersisted) ? retryLabel ?? 'Tentar atualizar tela' : customerId ? 'Salvar dados do cliente' : 'Cadastrar cliente'}</button><button className="secondary" type="button" disabled={pending} onClick={close}>Cancelar</button></div>
   </form></section></div>
 }
