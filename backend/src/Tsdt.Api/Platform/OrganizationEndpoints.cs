@@ -58,6 +58,11 @@ public static class OrganizationEndpoints
         });
     }
 
+    internal static IQueryable<Organization> OrganizationForUpdateQuery(ApplicationDbContext db, Guid id) =>
+        db.Database.IsNpgsql()
+            ? db.Organizations.FromSqlInterpolated($"SELECT * FROM \"Organizations\" WHERE \"Id\" = {id} FOR UPDATE")
+            : db.Organizations.Where(item => item.Id == id);
+
     private static OrganizationResponse ToResponse(Organization item) => new(item.Id, item.Name, item.Slug, item.Status, item.CreatedAtUtc, item.UpdatedAtUtc);
     private static IResult? Validate(OrganizationRequest request)
     {

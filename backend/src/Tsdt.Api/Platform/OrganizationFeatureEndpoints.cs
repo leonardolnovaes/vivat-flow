@@ -24,10 +24,12 @@ internal static class OrganizationFeatureEndpoints
         {
             if (!await OrganizationEndpoints.IsValidCsrf(context, antiforgery)) return Results.BadRequest();
             if (!FeatureCatalog.TryGet(key, out var feature)) return Results.NotFound();
-            if (!await db.Organizations.AnyAsync(item => item.Id == id)) return Results.NotFound();
+            await using var transaction = await db.Database.BeginTransactionAsync(context.RequestAborted);
+            var organization = await OrganizationEndpoints.OrganizationForUpdateQuery(db, id).SingleOrDefaultAsync(context.RequestAborted);
+            if (organization is null) return Results.NotFound();
 
             var enabled = await db.OrganizationFeatures.Where(item => item.OrganizationId == id)
-                .Select(item => item.FeatureKey).ToListAsync();
+                .Select(item => item.FeatureKey).ToListAsync(context.RequestAborted);
             var keys = enabled.ToHashSet(StringComparer.Ordinal);
             if (keys.Contains(key)) return Results.NoContent();
 
@@ -40,7 +42,8 @@ internal static class OrganizationFeatureEndpoints
 
             db.OrganizationFeatures.Add(new OrganizationFeature { OrganizationId = id, FeatureKey = key });
             OrganizationEndpoints.AddAudit(db, id, await OrganizationEndpoints.Actor(context, users), "ORGANIZATION_FEATURE_ENABLED", featureKey: key);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(context.RequestAborted);
+            await transaction.CommitAsync(context.RequestAborted);
             return Results.NoContent();
         });
 
@@ -50,9 +53,11 @@ internal static class OrganizationFeatureEndpoints
         {
             if (!await OrganizationEndpoints.IsValidCsrf(context, antiforgery)) return Results.BadRequest();
             if (!FeatureCatalog.TryGet(key, out var feature)) return Results.NotFound();
-            if (!await db.Organizations.AnyAsync(item => item.Id == id)) return Results.NotFound();
+            await using var transaction = await db.Database.BeginTransactionAsync(context.RequestAborted);
+            var organization = await OrganizationEndpoints.OrganizationForUpdateQuery(db, id).SingleOrDefaultAsync(context.RequestAborted);
+            if (organization is null) return Results.NotFound();
 
-            var enabled = await db.OrganizationFeatures.Where(item => item.OrganizationId == id).ToListAsync();
+            var enabled = await db.OrganizationFeatures.Where(item => item.OrganizationId == id).ToListAsync(context.RequestAborted);
             var grant = enabled.SingleOrDefault(item => item.FeatureKey == key);
             if (grant is null) return Results.NoContent();
 
@@ -66,7 +71,8 @@ internal static class OrganizationFeatureEndpoints
 
             db.OrganizationFeatures.Remove(grant);
             OrganizationEndpoints.AddAudit(db, id, await OrganizationEndpoints.Actor(context, users), "ORGANIZATION_FEATURE_DISABLED", featureKey: key);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(context.RequestAborted);
+            await transaction.CommitAsync(context.RequestAborted);
             return Results.NoContent();
         });
     }

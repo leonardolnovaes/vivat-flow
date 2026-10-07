@@ -47,6 +47,27 @@ public sealed class WorkOrderPlanningRulesTests
     }
 
     [Fact]
+    public void Schedule_entitlement_gates_schedule_writes_without_gating_work_order_execution_or_other_planning()
+    {
+        var order = Order();
+        var workerId = "worker";
+        var createWithoutSchedule = new CreateWorkOrderRequest(Guid.NewGuid(), workerId, null, null, "Prepare site");
+        var createWithSchedule = createWithoutSchedule with { ScheduledStartDate = Day };
+
+        Assert.True(WorkOrderSchedulingRules.CanCreateWithSchedule(false, createWithoutSchedule));
+        Assert.False(WorkOrderSchedulingRules.CanCreateWithSchedule(false, createWithSchedule));
+        Assert.True(WorkOrderSchedulingRules.CanCreateWithSchedule(true, createWithSchedule));
+
+        var updateOtherPlanning = new UpdateWorkOrderPlanningRequest(workerId, null, null, "Prepare site", Guid.NewGuid());
+        var updateSchedule = updateOtherPlanning with { ScheduledStartDate = Day };
+        Assert.True(WorkOrderSchedulingRules.CanUpdateSchedule(false, order, updateOtherPlanning));
+        Assert.False(WorkOrderSchedulingRules.CanUpdateSchedule(false, order, updateSchedule));
+        Assert.True(WorkOrderSchedulingRules.CanUpdateSchedule(true, order, updateSchedule));
+        Assert.True(WorkOrderRules.CanTransition(WorkOrderStatus.Scheduled, WorkOrderStatus.InProgress));
+        Assert.True(WorkOrderRules.CanTransition(WorkOrderStatus.InProgress, WorkOrderStatus.Completed));
+    }
+
+    [Fact]
     public void History_snapshots_authenticated_actor_and_cancellation_reason_without_mutable_attribution()
     {
         var order = Order();

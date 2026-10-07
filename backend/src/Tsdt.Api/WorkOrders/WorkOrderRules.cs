@@ -21,3 +21,18 @@ public static class WorkOrderRules
     public static bool CanSchedule(string? assignedUserId, DateOnly? start)
         => !string.IsNullOrWhiteSpace(assignedUserId) && start.HasValue;
 }
+
+public static class WorkOrderSchedulingRules
+{
+    public static bool CanCreateWithSchedule(bool scheduleEnabled, CreateWorkOrderRequest request) =>
+        scheduleEnabled || !HasScheduleValues(request.ScheduledStartDate, request.ScheduledEndDate, request.ScheduledStartTime, request.ScheduledEndTime);
+
+    public static bool CanUpdateSchedule(bool scheduleEnabled, WorkOrder order, UpdateWorkOrderPlanningRequest request) =>
+        scheduleEnabled || (order.ScheduledStartDate == request.ScheduledStartDate &&
+                            order.ScheduledEndDate == request.ScheduledEndDate &&
+                            order.ScheduledStartTime == request.ScheduledStartTime &&
+                            order.ScheduledEndTime == request.ScheduledEndTime);
+
+    private static bool HasScheduleValues(DateOnly? startDate, DateOnly? endDate, TimeOnly? startTime, TimeOnly? endTime) =>
+        startDate.HasValue || endDate.HasValue || startTime.HasValue || endTime.HasValue;
+}

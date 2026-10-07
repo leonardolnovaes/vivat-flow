@@ -25,7 +25,7 @@ public static class WorkOrderEndpoints
         orders.MapGet("/{id:guid}/history", HistoryAsync);
         orders.MapPost("/from-contract", CreateAsync).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
         orders.MapPut("/{id:guid}/planning", PlanningAsync).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
-        orders.MapPost("/{id:guid}/schedule", (Guid id, WorkOrderVersionRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.Scheduled, null, context, antiforgery, db)).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
+        orders.MapPost("/{id:guid}/schedule", (Guid id, WorkOrderVersionRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.Scheduled, null, context, antiforgery, db)).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement).RequireFeatureEntitlement(FeatureCatalog.Schedule);
         orders.MapPost("/{id:guid}/start", (Guid id, WorkOrderVersionRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.InProgress, null, context, antiforgery, db));
         orders.MapPost("/{id:guid}/complete", (Guid id, CompleteWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.Completed, request.CompletionNotes, context, antiforgery, db));
         orders.MapPost("/{id:guid}/cancel", (Guid id, CancelWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db) => TransitionAsync(id, request.ExpectedVersion, WorkOrderStatus.Cancelled, request.CancellationReason, context, antiforgery, db)).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
@@ -115,13 +115,15 @@ public static class WorkOrderEndpoints
                       select user).SingleOrDefaultAsync();
     }
 
-    private static async Task<IResult> CreateAsync(CreateWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db)
+    private static async Task<IResult> CreateAsync(CreateWorkOrderRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db, FeatureEntitlementService entitlements)
     {
         if (!await Csrf(context, antiforgery)) return CsrfFailure();
+        var organizationId = TenantContext.OrganizationId(context);
+        var hasSchedule = await entitlements.IsEnabledAsync(organizationId, FeatureCatalog.Schedule, context.RequestAborted);
+        if (!WorkOrderSchedulingRules.CanCreateWithSchedule(hasSchedule, request)) return ScheduleForbidden();
         var errors = ValidatePlanning(request.ScheduledStartDate, request.ScheduledEndDate, request.ScheduledStartTime, request.ScheduledEndTime, request.OperationalNotes);
         if (errors is not null) return Results.ValidationProblem(errors);
 
-        var organizationId = TenantContext.OrganizationId(context);
         var contract = await db.Contracts.AsNoTracking().Include(item => item.Items)
             .SingleOrDefaultAsync(item => item.Id == request.SourceId && item.OrganizationId == organizationId);
         if (contract is null) return Results.NotFound();
@@ -176,15 +178,17 @@ public static class WorkOrderEndpoints
         return Results.Created($"/api/work-orders/{order.Id}", Detail(order));
     }
 
-    private static async Task<IResult> PlanningAsync(Guid id, UpdateWorkOrderPlanningRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db)
+    private static async Task<IResult> PlanningAsync(Guid id, UpdateWorkOrderPlanningRequest request, HttpContext context, IAntiforgery antiforgery, ApplicationDbContext db, FeatureEntitlementService entitlements)
     {
         if (!await Csrf(context, antiforgery)) return CsrfFailure();
-        var errors = ValidatePlanning(request.ScheduledStartDate, request.ScheduledEndDate, request.ScheduledStartTime, request.ScheduledEndTime, request.OperationalNotes);
-        if (errors is not null) return Results.ValidationProblem(errors);
         var order = await Visible(db, context).Include(item => item.Items).SingleOrDefaultAsync(item => item.Id == id);
         if (order is null) return Results.NotFound();
         if (order.Version != request.ExpectedVersion) return Stale();
         if (!WorkOrderRules.CanPlan(order.Status)) return InvalidState();
+        var hasSchedule = await entitlements.IsEnabledAsync(TenantContext.OrganizationId(context), FeatureCatalog.Schedule, context.RequestAborted);
+        if (!WorkOrderSchedulingRules.CanUpdateSchedule(hasSchedule, order, request)) return ScheduleForbidden();
+        var errors = ValidatePlanning(request.ScheduledStartDate, request.ScheduledEndDate, request.ScheduledStartTime, request.ScheduledEndTime, request.OperationalNotes);
+        if (errors is not null) return Results.ValidationProblem(errors);
         var assignee = await AssigneeAsync(db, order.OrganizationId, request.AssignedUserId);
         if (!string.IsNullOrWhiteSpace(request.AssignedUserId) && assignee is null) return Error("assignedUserId", "Selecione um profissional ativo e elegível desta organização.");
         if (order.Status == WorkOrderStatus.Scheduled && (assignee is null || request.ScheduledStartDate is null))
@@ -268,6 +272,7 @@ public static class WorkOrderEndpoints
     private static IResult CsrfFailure() => Results.BadRequest(new { error = "Não foi possível validar a solicitação. Atualize a página e tente novamente." });
     private static IResult Stale() => Results.Conflict(new { error = "Esta OS foi alterada por outro usuário. Atualize os dados e tente novamente." });
     private static IResult InvalidState() => StateConflict("Esta ação não é permitida para o status atual da OS.");
+    private static IResult ScheduleForbidden() => Results.StatusCode(StatusCodes.Status403Forbidden);
     private static IResult StateConflict(string message) => Results.Conflict(new { error = message });
     private static IResult Duplicate() => StateConflict("Já existe uma OS não cancelada para este escopo.");
     private static IResult Error(string field, string message) => Results.ValidationProblem(new Dictionary<string, string[]> { [field] = [message] });
