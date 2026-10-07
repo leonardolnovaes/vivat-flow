@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
 using Tsdt.Api.Identity;
+using Tsdt.Api.Platform;
 
 namespace Tsdt.Tests.Identity;
 
@@ -49,11 +50,32 @@ public sealed class IdentityWebApplicationFactory : WebApplicationFactory<Progra
 
 public static class IdentityTestClient
 {
-    public static HttpClient Create(IdentityWebApplicationFactory factory) => factory.CreateClient(new WebApplicationFactoryClientOptions
+    public static HttpClient Create(IdentityWebApplicationFactory factory)
     {
-        BaseAddress = new Uri("https://localhost"),
-        HandleCookies = true
-    });
+        var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), HandleCookies = true });
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        // The bootstrap tenant represents a legacy Organization after migration backfill; later-created Organizations stay unentitled.
+        var bootstrapOrganizationId = db.Users.AsNoTracking().Where(user => user.Email == "admin@example.test")
+            .Select(user => user.OrganizationId).SingleOrDefault();
+        if (bootstrapOrganizationId is Guid organizationId)
+        {
+            var enabled = db.OrganizationFeatures.Where(item => item.OrganizationId == organizationId).Select(item => item.FeatureKey).ToHashSet(StringComparer.Ordinal);
+            db.OrganizationFeatures.AddRange(FeatureCatalog.AllKeys.Where(key => !enabled.Contains(key))
+                .Select(key => new OrganizationFeature { OrganizationId = organizationId, FeatureKey = key }));
+            db.SaveChanges();
+        }
+        return client;
+    }
+
+    internal static async Task EnableAllFeaturesAsync(ApplicationDbContext db, Guid organizationId)
+    {
+        var enabled = await db.OrganizationFeatures.Where(item => item.OrganizationId == organizationId)
+            .Select(item => item.FeatureKey).ToHashSetAsync(StringComparer.Ordinal);
+        db.OrganizationFeatures.AddRange(FeatureCatalog.AllKeys.Where(key => !enabled.Contains(key))
+            .Select(key => new OrganizationFeature { OrganizationId = organizationId, FeatureKey = key }));
+        await db.SaveChangesAsync();
+    }
 
     public static async Task<string> GetCsrfTokenAsync(HttpClient client)
     {

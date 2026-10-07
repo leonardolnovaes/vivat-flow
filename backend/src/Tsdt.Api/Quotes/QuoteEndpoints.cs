@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Tsdt.Api.Customers;
 using Tsdt.Api.Identity;
+using Tsdt.Api.Platform;
 using Tsdt.Api.Services;
 
 namespace Tsdt.Api.Quotes;
@@ -15,7 +16,7 @@ public static class QuoteEndpoints
     private static readonly TimeZoneInfo SaoPaulo = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
     public static void MapQuoteEndpoints(this WebApplication app)
     {
-        var quotes = app.MapGroup("/api/quotes").RequireAuthorization(AuthorizationPolicies.CommercialAdmin);
+        var quotes = app.MapGroup("/api/quotes").RequireAuthorization(AuthorizationPolicies.CommercialAdmin).RequireFeatureEntitlement(FeatureCatalog.Quotes);
         quotes.MapGet("", ListAsync); quotes.MapGet("/professionals", ProfessionalsAsync); quotes.MapGet("/summary", SummaryAsync); quotes.MapGet("/{id:guid}", GetAsync); quotes.MapGet("/{id:guid}/history", HistoryAsync); quotes.MapGet("/{id:guid}/approval-validation", GetApprovalValidationAsync); quotes.MapPost("", CreateAsync); quotes.MapPut("/{id:guid}", UpdateAsync);
         quotes.MapPost("/{id:guid}/visits", CreateVisitAsync); quotes.MapPost("/{id:guid}/visits/{visitId:guid}/reschedule", RescheduleVisitAsync); quotes.MapPost("/{id:guid}/visits/{visitId:guid}/complete", (Guid id, Guid visitId, HttpContext c, IAntiforgery a, ApplicationDbContext d) => ChangeVisitStatusAsync(id, visitId, QuoteVisitStatus.Completed, "VISIT_COMPLETED", c, a, d)); quotes.MapPost("/{id:guid}/visits/{visitId:guid}/cancel", (Guid id, Guid visitId, HttpContext c, IAntiforgery a, ApplicationDbContext d) => ChangeVisitStatusAsync(id, visitId, QuoteVisitStatus.Cancelled, "VISIT_CANCELLED", c, a, d));
         quotes.MapPost("/{id:guid}/submit", SendForApprovalAsync);

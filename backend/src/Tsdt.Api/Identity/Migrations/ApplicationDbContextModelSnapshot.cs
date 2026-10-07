@@ -267,6 +267,10 @@ namespace Tsdt.Api.Identity.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
 
+                    b.Property<string>("FeatureKey")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
                     b.Property<string>("ActorUserId")
                         .IsRequired()
                         .HasColumnType("text");
@@ -851,6 +855,21 @@ namespace Tsdt.Api.Identity.Migrations
                     b.HasIndex("OrganizationId", "OccurredAtUtc");
 
                     b.ToTable("OrganizationAuditRecords", (string)null);
+                });
+
+            modelBuilder.Entity("Tsdt.Api.Platform.OrganizationFeature", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FeatureKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.HasKey("OrganizationId", "FeatureKey");
+
+                    b.ToTable("OrganizationFeatures", (string)null);
                 });
 
             modelBuilder.Entity("Tsdt.Api.Platform.OrganizationServiceLine", b =>
@@ -1741,6 +1760,15 @@ namespace Tsdt.Api.Identity.Migrations
                         .IsRequired();
 
                     b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Tsdt.Api.Platform.OrganizationFeature", b =>
+                {
+                    b.HasOne("Tsdt.Api.Platform.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Tsdt.Api.Platform.OrganizationServiceLine", b =>

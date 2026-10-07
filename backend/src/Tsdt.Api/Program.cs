@@ -23,6 +23,7 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
     ?? (builder.Environment.IsEnvironment("Testing") ? "Host=localhost;Database=testing" : throw new InvalidOperationException("ConnectionStrings:DefaultConnection must be configured."));
 var frontendOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddScoped<FeatureEntitlementService>();
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 if (builder.Environment.IsEnvironment("Testing"))
 {
@@ -384,7 +385,10 @@ static async Task<CurrentUserResponse> CreateCurrentUserResponseAsync(Applicatio
     var organization = !user.IsPlatformAdministrator && user.OrganizationId is Guid organizationId
         ? await dbContext.Organizations.AsNoTracking().Where(item => item.Id == organizationId).Select(item => new CurrentOrganizationResponse(item.Id, item.Name)).SingleOrDefaultAsync()
         : null;
-    return new CurrentUserResponse(user.Id, user.FullName, user.Email!, roles.ToArray(), user.MustChangePassword, user.IsPlatformAdministrator, user.PreferredLocale, organization);
+    var features = !user.IsPlatformAdministrator && user.OrganizationId is Guid tenantOrganizationId
+        ? await dbContext.OrganizationFeatures.AsNoTracking().Where(item => item.OrganizationId == tenantOrganizationId).OrderBy(item => item.FeatureKey).Select(item => item.FeatureKey).ToArrayAsync()
+        : [];
+    return new CurrentUserResponse(user.Id, user.FullName, user.Email!, roles.ToArray(), user.MustChangePassword, user.IsPlatformAdministrator, user.PreferredLocale, organization, features);
 }
 
 static Task<UserAdministrationResponse> CreateUserAdministrationResponseAsync(ApplicationUser user, UserManager<ApplicationUser> userManager) => UserAdministrationSupport.CreateResponseAsync(user, userManager);

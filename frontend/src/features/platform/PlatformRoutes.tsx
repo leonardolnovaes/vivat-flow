@@ -9,11 +9,12 @@ import type { SupportedLocale } from '../../i18n/locale'
 type Status = 'Active' | 'Suspended' | 'Deactivated'
 type Organization = { id: string; name: string; slug: string; status: Status; createdAtUtc: string; updatedAtUtc: string }
 type OrganizationServiceLine = { id: string; code: string; name: string; isActive: boolean; isEnabled: boolean }
+type OrganizationFeature = { key: string; displayName: string; enabled: boolean; dependencies: string[] }
 type Summary = { total: number; active: number; suspended: number; deactivated: number }
 type Errors = Record<string, string[]>
 type TenantAdministrator = { id: string; fullName: string; email: string; isActive: boolean; mustChangePassword: boolean }
 type CreateTenantAdministratorResult = { user: TenantAdministrator; temporaryPassword: string }
-type OrganizationAudit = { id: string; action: string; actorName: string; targetUserName: string | null; targetUserEmail: string | null; occurredAtUtc: string }
+type OrganizationAudit = { id: string; action: string; actorName: string; targetUserName: string | null; targetUserEmail: string | null; featureKey: string | null; occurredAtUtc: string }
 
 export function PlatformRoutes({ path, go, logout, pending, changeLocale }: { path: string; go: (path: string) => void; logout: () => Promise<void>; pending: boolean; changeLocale: (locale: SupportedLocale) => Promise<boolean> }) {
   const parts = path.slice('/plataforma/organizacoes'.length).split('/').filter(Boolean)
@@ -49,7 +50,7 @@ function OrganizationDetail({ id, go }: { id: string; go: (path: string) => void
   if (loading) return <LoadingState size="lg" />
   if (!organization) return <section className="card"><h2>{t('platform.missingTitle')}</h2><p className="error" role="alert">{error || t('platform.missingHint')}</p><button onClick={() => go('/plataforma/organizacoes')}>{t('platform.backToOrganizations')}</button></section>
   if (editing) return <OrganizationForm organization={organization} go={go} saved={value => { setOrganization(value); setEditing(false); setAuditRevision(revision => revision + 1) }} />
-  return <><div className="page-heading"><div><p className="eyebrow">{t('platform.controlPlane')}</p><h2>{organization.name}</h2><p>{t('platform.identifier')}: {organization.slug}</p></div></div>{error && <p className="error" role="alert">{error}</p>}<section className="card"><dl className="service-detail-grid"><Info label={t('platform.name')} value={organization.name}/><Info label={t('platform.identifier')} value={organization.slug}/><Info label={t('common.status')} value={<StatusBadge status={organization.status} />}/><Info label={t('common.createdAt')} value={date(organization.createdAtUtc)}/><Info label={t('common.updatedAt')} value={date(organization.updatedAtUtc)}/></dl><div className="actions"><button className="secondary" disabled={saving} onClick={() => setEditing(true)}>{t('platform.editBasic')}</button>{organization.status === 'Active' && <button className="secondary" disabled={saving} onClick={() => setAction('suspend')}>{t('platform.suspend')}</button>}{organization.status === 'Suspended' && <button disabled={saving} onClick={() => setAction('activate')}>{t('platform.activate')}</button>}{organization.status !== 'Deactivated' && <button className="secondary" disabled={saving} onClick={() => setAction('deactivate')}>{t('platform.deactivate')}</button>}</div></section><OrganizationServiceLines organizationId={organization.id}/><OrganizationAdministrators organizationId={organization.id} status={organization.status} onCreated={() => setAuditRevision(revision => revision + 1)}/><OrganizationAudit organizationId={organization.id} refreshKey={auditRevision}/>{action && <Confirmation action={action} pending={saving} cancel={() => setAction(null)} confirm={() => void transition()}/>}</>
+  return <><div className="page-heading"><div><p className="eyebrow">{t('platform.controlPlane')}</p><h2>{organization.name}</h2><p>{t('platform.identifier')}: {organization.slug}</p></div></div>{error && <p className="error" role="alert">{error}</p>}<section className="card"><dl className="service-detail-grid"><Info label={t('platform.name')} value={organization.name}/><Info label={t('platform.identifier')} value={organization.slug}/><Info label={t('common.status')} value={<StatusBadge status={organization.status} />}/><Info label={t('common.createdAt')} value={date(organization.createdAtUtc)}/><Info label={t('common.updatedAt')} value={date(organization.updatedAtUtc)}/></dl><div className="actions"><button className="secondary" disabled={saving} onClick={() => setEditing(true)}>{t('platform.editBasic')}</button>{organization.status === 'Active' && <button className="secondary" disabled={saving} onClick={() => setAction('suspend')}>{t('platform.suspend')}</button>}{organization.status === 'Suspended' && <button disabled={saving} onClick={() => setAction('activate')}>{t('platform.activate')}</button>}{organization.status !== 'Deactivated' && <button className="secondary" disabled={saving} onClick={() => setAction('deactivate')}>{t('platform.deactivate')}</button>}</div></section><OrganizationServiceLines organizationId={organization.id}/><OrganizationFeatures organizationId={organization.id} onChanged={() => setAuditRevision(revision => revision + 1)}/><OrganizationAdministrators organizationId={organization.id} status={organization.status} onCreated={() => setAuditRevision(revision => revision + 1)}/><OrganizationAudit organizationId={organization.id} refreshKey={auditRevision}/>{action && <Confirmation action={action} pending={saving} cancel={() => setAction(null)} confirm={() => void transition()}/>}</>
 }
 
 function OrganizationServiceLines({ organizationId }: { organizationId: string }) {
@@ -58,6 +59,44 @@ function OrganizationServiceLines({ organizationId }: { organizationId: string }
   useEffect(() => { void Promise.resolve().then(load) }, [load])
   const change = async (line: OrganizationServiceLine, enabled: boolean) => { if (pendingLineId) return; setPendingLineId(line.id); setError(''); setNotice(''); try { const response = await request(`/api/platform/organizations/${organizationId}/service-lines/${line.id}`, { method: enabled ? 'POST' : 'DELETE', body: '{}' }); if (!response.ok) throw await ApiError.from(response); setLines(current => current?.map(item => item.id === line.id ? { ...item, isEnabled: enabled } : item) ?? null); setNotice(enabled ? 'Linha de serviço habilitada para esta empresa.' : 'Linha de serviço desabilitada. Os serviços existentes foram preservados.') } catch { setError('Não foi possível atualizar as linhas de serviço desta empresa.') } finally { setPendingLineId(null); setDisableTarget(null) } }
   return <section className="card section-card"><div className="section-heading"><div><h3>Linhas de serviço</h3><p>Defina quais linhas esta empresa pode usar em novos serviços.</p></div></div>{notice && <p className="notice" role="status">{notice}</p>}{error && <div className="error-panel" role="alert"><p>{error}</p><button className="secondary" disabled={pendingLineId !== null} onClick={() => void load()}>Tentar novamente</button></div>}{lines === null ? <LoadingState size="sm" /> : lines.length === 0 ? <div className="empty-state compact"><h4>Nenhuma linha de serviço disponível</h4><p>Não há linhas de serviço cadastradas na plataforma.</p></div> : <div className="table-wrap"><table><thead><tr><th>Linha de serviço</th><th>Disponibilidade</th><th>Uso nesta empresa</th></tr></thead><tbody>{lines.map(line => <tr key={line.id}><td><strong>{line.name}</strong></td><td>{line.isActive ? <span className="status active">Disponível</span> : <span className="status inactive">Indisponível na plataforma</span>}</td><td>{line.isActive ? <label className="service-line-toggle"><input type="checkbox" role="switch" checked={line.isEnabled} disabled={pendingLineId !== null} aria-label={`Habilitar ${line.name} para esta empresa`} onChange={() => line.isEnabled ? setDisableTarget(line) : void change(line, true)} /><span className="service-line-toggle-track" aria-hidden="true"/><span>{pendingLineId === line.id ? 'Atualizando...' : line.isEnabled ? 'Habilitada' : 'Desabilitada'}</span></label> : <span className="field-hint">Indisponível para novos cadastros</span>}</td></tr>)}</tbody></table></div>}{disableTarget && <ServiceLineDisableConfirmation line={disableTarget} pending={pendingLineId !== null} cancel={() => setDisableTarget(null)} confirm={() => void change(disableTarget, false)} />}</section>
+}
+
+function OrganizationFeatures({ organizationId, onChanged }: { organizationId: string; onChanged: () => void }) {
+  const { t } = useLocale()
+  const [features, setFeatures] = useState<OrganizationFeature[] | null>(null), [error, setError] = useState(''), [notice, setNotice] = useState(''), [pendingKey, setPendingKey] = useState<string | null>(null)
+  const load = useCallback(async () => {
+    setError('')
+    try {
+      const response = await request(`/api/platform/organizations/${organizationId}/features`)
+      if (!response.ok) throw await ApiError.from(response)
+      setFeatures(await response.json() as OrganizationFeature[])
+    } catch (caught) {
+      setError(caught instanceof ApiError ? (Object.values(caught.errors).flat()[0] ?? caught.message) || t('platform.featureLoadFailure') : t('platform.featureLoadFailure'))
+    }
+  }, [organizationId, t])
+  useEffect(() => { void Promise.resolve().then(load) }, [load])
+  const label = (key: string, fallback: string) => t(`platform.featureNames.${key}`, { defaultValue: fallback })
+  const change = async (feature: OrganizationFeature) => {
+    if (pendingKey || !features) return
+    setPendingKey(feature.key); setError(''); setNotice('')
+    try {
+      const response = await request(`/api/platform/organizations/${organizationId}/features/${feature.key}`, { method: feature.enabled ? 'DELETE' : 'POST', ...(feature.enabled ? {} : { body: '{}' }) })
+      if (!response.ok) throw await ApiError.from(response)
+      setFeatures(current => current?.map(item => item.key === feature.key ? { ...item, enabled: !feature.enabled } : item) ?? null)
+      setNotice(t(feature.enabled ? 'platform.featureDisabled' : 'platform.featureEnabled', { feature: label(feature.key, feature.displayName) }))
+      onChanged()
+    } catch (caught) {
+      setError(caught instanceof ApiError ? (Object.values(caught.errors).flat()[0] ?? caught.message) || t('platform.featureSaveFailure') : t('platform.featureSaveFailure'))
+    } finally { setPendingKey(null) }
+  }
+  return <section className="card section-card"><div className="section-heading"><div><h3>{t('platform.featuresTitle')}</h3><p>{t('platform.featuresHint')}</p></div></div>{notice && <p className="notice" role="status">{notice}</p>}{error && <div className="error-panel" role="alert"><p>{error}</p><button className="secondary" disabled={pendingKey !== null} onClick={() => void load()}>{t('common.retry')}</button></div>}{features === null ? <LoadingState size="sm" /> : <div className="table-wrap"><table><thead><tr><th>{t('platform.feature')}</th><th>{t('platform.featureDependencies')}</th><th>{t('platform.featureAvailability')}</th></tr></thead><tbody>{features.map(feature => {
+    const blockedBy = feature.enabled
+      ? features.filter(item => item.enabled && item.dependencies.includes(feature.key))
+      : feature.dependencies.map(key => features.find(item => item.key === key)).filter((item): item is OrganizationFeature => item !== undefined && !item.enabled)
+    const dependencyNames = blockedBy.map(item => label(item.key, item.displayName)).join(', ')
+    const reason = blockedBy.length === 0 ? '' : t(feature.enabled ? 'platform.featureDisableBlocked' : 'platform.featureEnableBlocked', { feature: label(feature.key, feature.displayName), dependencies: dependencyNames })
+    return <tr key={feature.key}><td><strong>{label(feature.key, feature.displayName)}</strong></td><td>{feature.dependencies.length ? feature.dependencies.map(key => label(key, features.find(item => item.key === key)?.displayName ?? key)).join(', ') : t('platform.noFeatureDependencies')}</td><td><label className="service-line-toggle"><input type="checkbox" role="switch" checked={feature.enabled} disabled={pendingKey !== null || blockedBy.length > 0} aria-label={t(feature.enabled ? 'platform.disableFeature' : 'platform.enableFeature', { feature: label(feature.key, feature.displayName) })} onChange={() => void change(feature)} /><span className="service-line-toggle-track" aria-hidden="true"/><span>{pendingKey === feature.key ? t('platform.updatingFeature') : t(feature.enabled ? 'platform.featureOn' : 'platform.featureOff')}</span></label>{reason && <small className="field-hint feature-dependency-hint">{reason}</small>}</td></tr>
+  })}</tbody></table></div>}</section>
 }
 
 function OrganizationAdministrators({ organizationId, status, onCreated }: { organizationId: string; status: Status; onCreated: () => void }) {
@@ -123,9 +162,15 @@ function OrganizationAudit({ organizationId, refreshKey }: { organizationId: str
   }, [organizationId, t])
   useEffect(() => { void Promise.resolve().then(load) }, [load, refreshKey])
   const date = (value: string) => new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
-  const description = (entry: OrganizationAudit) => entry.action === 'TENANT_ADMINISTRATOR_CREATED'
-    ? t('platform.auditAdministratorCreated', { email: entry.targetUserEmail ?? entry.targetUserName ?? '' })
-    : t(`platform.auditActions.${entry.action}`)
+  const description = (entry: OrganizationAudit) => {
+    if (entry.action === 'TENANT_ADMINISTRATOR_CREATED') return t('platform.auditAdministratorCreated', { email: entry.targetUserEmail ?? entry.targetUserName ?? '' })
+    if (entry.action === 'ORGANIZATION_FEATURE_ENABLED' || entry.action === 'ORGANIZATION_FEATURE_DISABLED') {
+      const feature = entry.featureKey ?? ''
+      const name = t(`platform.featureNames.${feature}`, { defaultValue: feature })
+      return t(entry.action === 'ORGANIZATION_FEATURE_ENABLED' ? 'platform.auditFeatureEnabled' : 'platform.auditFeatureDisabled', { feature: name })
+    }
+    return t(`platform.auditActions.${entry.action}`)
+  }
   return <section className="card section-card platform-audit"><div className="section-heading"><div><h3>{t('platform.administrativeHistory')}</h3><p>{t('platform.administrativeHistoryHint')}</p></div></div>{error && <div className="error-panel" role="alert"><p>{error}</p><button className="secondary" onClick={() => void load()}>{t('common.retry')}</button></div>}{history === null && !error ? <LoadingState size="sm" /> : history === null ? null : history.length === 0 ? <div className="empty-state compact"><p>{t('platform.noAdministrativeEvents')}</p></div> : <ol className="platform-audit-list">{history.map(entry => <li key={entry.id}><time dateTime={entry.occurredAtUtc}>{date(entry.occurredAtUtc)}</time><p><strong>{entry.actorName}</strong> {description(entry)}</p></li>)}</ol>}</section>
 }
 

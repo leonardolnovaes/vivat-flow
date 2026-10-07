@@ -98,6 +98,7 @@ public sealed class CustomerTenantIsolationTests
         var organization = new Organization { Name = "Organização B", Slug = $"organization-b-{Guid.NewGuid():N}" };
         db.Organizations.Add(organization);
         await db.SaveChangesAsync();
+        await IdentityTestClient.EnableAllFeaturesAsync(db, organization.Id);
         return organization;
     }
 

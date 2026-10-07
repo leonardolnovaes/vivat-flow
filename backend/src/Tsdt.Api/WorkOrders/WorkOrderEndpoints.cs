@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Tsdt.Api.Contracts;
 using Tsdt.Api.Customers;
 using Tsdt.Api.Identity;
+using Tsdt.Api.Platform;
 
 namespace Tsdt.Api.WorkOrders;
 
@@ -15,9 +16,9 @@ public static class WorkOrderEndpoints
 
     public static void MapWorkOrderEndpoints(this WebApplication app)
     {
-        var orders = app.MapGroup("/api/work-orders").RequireAuthorization(AuthorizationPolicies.WorkOrderExecution);
+        var orders = app.MapGroup("/api/work-orders").RequireAuthorization(AuthorizationPolicies.WorkOrderExecution).RequireFeatureEntitlement(FeatureCatalog.WorkOrders);
         orders.MapGet("", ListAsync);
-        orders.MapGet("/agenda", AgendaAsync);
+        orders.MapGet("/agenda", AgendaAsync).RequireFeatureEntitlement(FeatureCatalog.Schedule);
         orders.MapGet("/eligible-assignees", EligibleAssigneesAsync).RequireAuthorization(AuthorizationPolicies.WorkOrderManagement);
         WorkOrderSourceEndpoints.Map(orders);
         orders.MapGet("/{id:guid}", GetAsync);

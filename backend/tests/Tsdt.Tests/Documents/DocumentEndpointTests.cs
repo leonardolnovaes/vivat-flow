@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Tsdt.Api.Customers;
@@ -138,8 +139,16 @@ public sealed class DocumentEndpointTests
         }
     }
 
-    private static HttpClient CreateClient(WebApplicationFactory<Program> factory) => factory.CreateClient(new WebApplicationFactoryClientOptions
-    { BaseAddress = new Uri("https://localhost"), HandleCookies = true });
+    private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
+    {
+        var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), HandleCookies = true });
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var organizationId = db.Users.AsNoTracking().Where(user => user.Email == "admin@example.test")
+            .Select(user => user.OrganizationId).SingleOrDefault();
+        if (organizationId is Guid id) IdentityTestClient.EnableAllFeaturesAsync(db, id).GetAwaiter().GetResult();
+        return client;
+    }
 
     private static async Task<HttpResponseMessage> SendJsonAsync(HttpClient client, string path, object body)
     {

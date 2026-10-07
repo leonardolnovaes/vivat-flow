@@ -83,7 +83,7 @@ internal static class TenantAdministratorEndpoints
                 where record.OrganizationId == id
                 join actor in db.Users.AsNoTracking() on record.ActorUserId equals actor.Id
                 orderby record.OccurredAtUtc descending, record.Id
-                select new OrganizationAuditResponse(record.Id, record.Action, actor.FullName, record.TargetUserNameSnapshot, record.TargetUserEmailSnapshot, record.OccurredAtUtc))
+                select new OrganizationAuditResponse(record.Id, record.Action, actor.FullName, record.TargetUserNameSnapshot, record.TargetUserEmailSnapshot, record.FeatureKey, record.OccurredAtUtc))
                 .Take(100)
                 .ToListAsync();
 

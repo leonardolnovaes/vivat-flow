@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.EntityFrameworkCore;
 using Tsdt.Api.Identity;
+using Tsdt.Api.Platform;
 using Tsdt.Api.Quotes;
 using Tsdt.Api.Customers;
 
@@ -13,7 +14,7 @@ public static class ContractEndpoints
 
     public static void MapContractEndpoints(this WebApplication app)
     {
-        var contracts = app.MapGroup("/api/contracts").RequireAuthorization(AuthorizationPolicies.CommercialAdmin);
+        var contracts = app.MapGroup("/api/contracts").RequireAuthorization(AuthorizationPolicies.CommercialAdmin).RequireFeatureEntitlement(FeatureCatalog.Contracts);
         contracts.MapGet("", ListAsync);
         contracts.MapGet("/{id:guid}", GetAsync);
         contracts.MapPost("", CreateFromQuoteAsync);
