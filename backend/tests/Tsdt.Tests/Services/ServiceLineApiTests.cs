@@ -152,7 +152,7 @@ public sealed class ServiceLineApiTests
     private static async Task<Organization> CreateOrganizationAsync(IdentityWebApplicationFactory factory, string name)
     {
         using var scope = factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var organization = new Organization { Name = name, Slug = $"{name.ToLowerInvariant().Replace(' ', '-')}-{Guid.NewGuid():N}" }; db.Organizations.Add(organization); await db.SaveChangesAsync(); return organization;
+        var organization = new Organization { Name = name, Slug = $"{name.ToLowerInvariant().Replace(' ', '-')}-{Guid.NewGuid():N}" }; db.Organizations.Add(organization); await db.SaveChangesAsync(); await IdentityTestClient.EnableAllFeaturesAsync(db, organization.Id); return organization;
     }
     private static async Task<ApplicationUser> CreateTenantUserAsync(IdentityWebApplicationFactory factory, Guid organizationId, string email, string role)
     {

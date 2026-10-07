@@ -13,7 +13,7 @@ import { createQuote, getEligibleProfessionals, getQuote, getQuoteApprovalValida
 import { editState } from './quoteEdit'
 import type { EligibleProfessional, PaymentType, Quote, QuoteInput, QuoteItem, QuoteList, QuoteStatus, RiskDegree } from './types'
 
-type Props = { path: string; go: (path: string, replace?: boolean) => void; onSessionExpired: () => void }
+type Props = { path: string; go: (path: string, replace?: boolean) => void; onSessionExpired: () => void; features: string[] }
 type Errors = Record<string, string[]>
 
 const blank: QuoteInput = { customerId: '', items: [], totalAmount: '', paymentType: '', installmentCount: '', employeeCount: '', riskDegree: '', serviceUnitId: '', responsibleUserId: '', notes: '' }

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Antiforgery;
 using Tsdt.Api.Identity;
+using Tsdt.Api.Platform;
 
 namespace Tsdt.Api.Documents;
 
@@ -9,12 +10,14 @@ public static class DocumentEndpoints
     public static void MapDocumentEndpoints(this WebApplication app)
     {
         var customers = app.MapGroup("/api/customers/{customerId:guid}/documents")
-            .RequireAuthorization(AuthorizationPolicies.DocumentRead);
+            .RequireAuthorization(AuthorizationPolicies.DocumentRead)
+            .RequireFeatureEntitlement(FeatureCatalog.Documents);
         customers.MapGet("", ListAsync);
         customers.MapGet("/contexts", ContextOptionsAsync).RequireAuthorization(AuthorizationPolicies.DocumentManagement);
         customers.MapPost("", UploadAsync).RequireAuthorization(AuthorizationPolicies.DocumentManagement);
         app.MapGet("/api/documents/{id:guid}/download", DownloadAsync)
-            .RequireAuthorization(AuthorizationPolicies.DocumentRead);
+            .RequireAuthorization(AuthorizationPolicies.DocumentRead)
+            .RequireFeatureEntitlement(FeatureCatalog.Documents);
     }
 
     private static async Task<IResult> UploadAsync(Guid customerId, HttpContext context, IAntiforgery antiforgery, DocumentService documents)

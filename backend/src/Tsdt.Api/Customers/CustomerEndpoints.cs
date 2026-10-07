@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Tsdt.Api.Identity;
+using Tsdt.Api.Platform;
 
 namespace Tsdt.Api.Customers;
 
@@ -18,7 +19,7 @@ public static partial class CustomerEndpoints
 
     public static void MapCustomerEndpoints(this WebApplication app)
     {
-        var customers = app.MapGroup("/api/customers").RequireAuthorization();
+        var customers = app.MapGroup("/api/customers").RequireAuthorization().RequireFeatureEntitlement(FeatureCatalog.Customers);
         customers.MapGet("", ListAsync);
         customers.MapGet("/{id:guid}", GetAsync);
         customers.MapPost("", CreateAsync).RequireAuthorization(policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager));

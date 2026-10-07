@@ -28,6 +28,8 @@ Platform Administrators may manage Organization identity, lifecycle, platform ac
 
 The Control Plane administers the board; tenant users operate the business.
 
+Platform Administrators also enable a controlled set of product features per Organization. These feature entitlements are independent of Service Lines and tenant roles: an enabled feature grants the Organization access to a product capability, while the tenant role still determines what each user may do inside it. New Organizations start without operational feature entitlements; existing Organizations retain the current MVP features through migration backfill.
+
 ## Service Lines and Services
 
 `ServiceLine` is a global platform capability/category such as SST, Cleaning, or Flooring.

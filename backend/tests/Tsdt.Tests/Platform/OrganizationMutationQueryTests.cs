@@ -5,17 +5,17 @@ using Tsdt.Api.Platform;
 namespace Tsdt.Tests.Platform;
 
 [Trait("Category", "Unit")]
-public sealed class TenantAdministratorProvisioningQueryTests
+public sealed class OrganizationMutationQueryTests
 {
     [Fact]
-    public void Provisioning_organization_query_locks_the_target_row_on_postgresql()
+    public void Organization_mutation_query_locks_the_target_row_on_postgresql()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql("Host=localhost;Database=vivat_test")
             .Options;
         using var db = new ApplicationDbContext(options);
 
-        var sql = TenantAdministratorEndpoints.ProvisioningOrganizationQuery(db, Guid.NewGuid()).ToQueryString();
+        var sql = OrganizationEndpoints.OrganizationForUpdateQuery(db, Guid.NewGuid()).ToQueryString();
 
         Assert.Contains("WHERE \"Id\" =", sql);
         Assert.Contains("FOR UPDATE", sql);

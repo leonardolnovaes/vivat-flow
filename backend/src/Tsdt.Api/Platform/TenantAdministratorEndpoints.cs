@@ -41,7 +41,7 @@ internal static class TenantAdministratorEndpoints
             if (await users.FindByEmailAsync(email!) is not null) return DuplicateEmail();
 
             await using var transaction = await db.Database.BeginTransactionAsync();
-            var organization = (await ProvisioningOrganizationQuery(db, id).ToListAsync()).SingleOrDefault();
+            var organization = await OrganizationEndpoints.OrganizationForUpdateQuery(db, id).SingleOrDefaultAsync();
             if (organization is null) return Results.NotFound();
             if (!OrganizationRules.CanProvisionTenantAdministrator(organization.Status)) return OrganizationNotEligible(organization.Status);
 
@@ -83,7 +83,7 @@ internal static class TenantAdministratorEndpoints
                 where record.OrganizationId == id
                 join actor in db.Users.AsNoTracking() on record.ActorUserId equals actor.Id
                 orderby record.OccurredAtUtc descending, record.Id
-                select new OrganizationAuditResponse(record.Id, record.Action, actor.FullName, record.TargetUserNameSnapshot, record.TargetUserEmailSnapshot, record.OccurredAtUtc))
+                select new OrganizationAuditResponse(record.Id, record.Action, actor.FullName, record.TargetUserNameSnapshot, record.TargetUserEmailSnapshot, record.FeatureKey, record.OccurredAtUtc))
                 .Take(100)
                 .ToListAsync();
 
@@ -92,11 +92,6 @@ internal static class TenantAdministratorEndpoints
     }
 
     private static IResult DuplicateEmail() => Results.Conflict(new { errors = new Dictionary<string, string[]> { ["email"] = ["Já existe um usuário com este e-mail."] } });
-
-    internal static IQueryable<Organization> ProvisioningOrganizationQuery(ApplicationDbContext db, Guid id) =>
-        db.Database.IsNpgsql()
-            ? db.Organizations.FromSqlInterpolated($"SELECT * FROM \"Organizations\" WHERE \"Id\" = {id} FOR UPDATE")
-            : db.Organizations.Where(item => item.Id == id);
 
     private static IResult OrganizationNotEligible(OrganizationStatus status) => Results.Conflict(new
     {

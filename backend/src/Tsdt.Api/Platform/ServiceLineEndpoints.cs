@@ -12,7 +12,7 @@ public static class ServiceLineEndpoints
         {
             var organizationId = TenantContext.OrganizationId(context);
             return Results.Ok(await db.OrganizationServiceLines.AsNoTracking().Where(item => item.OrganizationId == organizationId && item.ServiceLine.IsActive).OrderBy(item => item.ServiceLine.Name).Select(item => new TenantServiceLineResponse(item.ServiceLine.Id, item.ServiceLine.Code, item.ServiceLine.Name)).ToListAsync());
-        }).RequireAuthorization();
+        }).RequireAuthorization().RequireFeatureEntitlement(FeatureCatalog.Services);
 
         var platform = app.MapGroup("/api/platform/organizations/{organizationId:guid}/service-lines").RequireAuthorization(AuthorizationPolicies.PlatformAdministrator);
         platform.MapGet("", async (Guid organizationId, ApplicationDbContext db) =>

@@ -131,6 +131,40 @@ public sealed class WorkOrderApiTests
     }
 
     [Fact, Trait("Category", "Integration")]
+    public async Task Schedule_entitlement_blocks_schedule_writes_but_preserves_work_order_planning_and_execution()
+    {
+        using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);
+        var quote = await SeedQuoteAsync(factory);
+        var activeContract = await SeedActiveContractAsync(factory, quote);
+        var firstWorker = await CreateUserAsync(factory, quote.OrganizationId, IdentityRoles.User, "schedule-first-worker@test");
+        var secondWorker = await CreateUserAsync(factory, quote.OrganizationId, IdentityRoles.User, "schedule-second-worker@test");
+        var start = DateTimeOffset.UtcNow.AddDays(1); var end = start.AddHours(2);
+        var startDate = DateOnly.FromDateTime(start.DateTime); var endDate = DateOnly.FromDateTime(end.DateTime);
+        var startTime = TimeOnly.FromDateTime(start.DateTime); var endTime = TimeOnly.FromDateTime(end.DateTime);
+        var draft = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Post, "/api/work-orders/from-contract", new CreateWorkOrderRequest(activeContract.Id, firstWorker.Id, startDate, endDate, "Initial notes", startTime, endTime));
+        var scheduled = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Post, $"/api/work-orders/{draft.Id}/schedule", new WorkOrderVersionRequest(draft.Version));
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var grant = await db.OrganizationFeatures.SingleAsync(item => item.OrganizationId == quote.OrganizationId && item.FeatureKey == FeatureCatalog.Schedule);
+            db.OrganizationFeatures.Remove(grant);
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await Post(admin, $"/api/work-orders/{scheduled.Id}/schedule", new WorkOrderVersionRequest(scheduled.Version))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await SendResponse(admin, HttpMethod.Put, $"/api/work-orders/{scheduled.Id}/planning", new UpdateWorkOrderPlanningRequest(firstWorker.Id, startDate.AddDays(1), endDate.AddDays(1), "Reschedule", scheduled.Version, startTime, endTime))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Post(admin, "/api/work-orders/from-contract", new CreateWorkOrderRequest(activeContract.Id, firstWorker.Id, startDate, endDate, null, startTime, endTime))).StatusCode);
+
+        var planning = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Put, $"/api/work-orders/{scheduled.Id}/planning", new UpdateWorkOrderPlanningRequest(secondWorker.Id, startDate, endDate, "Operational notes updated", scheduled.Version, startTime, endTime));
+        Assert.Equal(secondWorker.Id, planning.AssignedUserId);
+        Assert.Equal("Operational notes updated", planning.OperationalNotes);
+
+        var executing = await Send<WorkOrderDetailResponse>(admin, HttpMethod.Post, $"/api/work-orders/{planning.Id}/start", new WorkOrderVersionRequest(planning.Version));
+        Assert.Equal(WorkOrderStatus.InProgress, executing.Status);
+    }
+
+    [Fact, Trait("Category", "Integration")]
     public async Task Tenant_and_platform_boundaries_and_invalid_quote_source_are_enforced()
     {
         using var factory = new IdentityWebApplicationFactory(); using var admin = await AdminAsync(factory);

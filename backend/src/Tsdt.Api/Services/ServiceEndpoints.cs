@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Tsdt.Api.Identity;
+using Tsdt.Api.Platform;
 
 namespace Tsdt.Api.Services;
 
@@ -13,7 +14,7 @@ public static partial class ServiceEndpoints
 
     public static void MapServiceEndpoints(this WebApplication app)
     {
-        var services = app.MapGroup("/api/services").RequireAuthorization();
+        var services = app.MapGroup("/api/services").RequireAuthorization().RequireFeatureEntitlement(FeatureCatalog.Services);
         services.MapGet("", ListAsync);
         services.MapGet("/{id:guid}", GetAsync);
         services.MapPost("", CreateAsync).RequireAuthorization(policy => policy.RequireRole(IdentityRoles.Admin, IdentityRoles.Manager));

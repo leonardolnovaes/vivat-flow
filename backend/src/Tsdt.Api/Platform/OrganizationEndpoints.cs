@@ -11,6 +11,7 @@ public static class OrganizationEndpoints
     {
         var group = app.MapGroup("/api/platform/organizations").RequireAuthorization(AuthorizationPolicies.PlatformAdministrator);
         TenantAdministratorEndpoints.Map(group);
+        OrganizationFeatureEndpoints.Map(group);
         group.MapGet("", async (ApplicationDbContext db) => Results.Ok(await db.Organizations.AsNoTracking().OrderBy(item => item.Name).Select(item => ToResponse(item)).ToListAsync()));
         group.MapGet("/summary", async (ApplicationDbContext db) => Results.Ok(new OrganizationDashboardResponse(await db.Organizations.CountAsync(), await db.Organizations.CountAsync(item => item.Status == OrganizationStatus.Active), await db.Organizations.CountAsync(item => item.Status == OrganizationStatus.Suspended), await db.Organizations.CountAsync(item => item.Status == OrganizationStatus.Deactivated))));
         group.MapGet("/{id:guid}", async (Guid id, ApplicationDbContext db) => await db.Organizations.AsNoTracking().SingleOrDefaultAsync(item => item.Id == id) is { } organization ? Results.Ok(ToResponse(organization)) : Results.NotFound());
@@ -57,6 +58,11 @@ public static class OrganizationEndpoints
         });
     }
 
+    internal static IQueryable<Organization> OrganizationForUpdateQuery(ApplicationDbContext db, Guid id) =>
+        db.Database.IsNpgsql()
+            ? db.Organizations.FromSqlInterpolated($"SELECT * FROM \"Organizations\" WHERE \"Id\" = {id} FOR UPDATE")
+            : db.Organizations.Where(item => item.Id == id);
+
     private static OrganizationResponse ToResponse(Organization item) => new(item.Id, item.Name, item.Slug, item.Status, item.CreatedAtUtc, item.UpdatedAtUtc);
     private static IResult? Validate(OrganizationRequest request)
     {
@@ -71,6 +77,6 @@ public static class OrganizationEndpoints
     private static IResult InvalidTransition() => Results.Conflict(new { error = "Esta alteração de status não é permitida." });
     internal static async Task<bool> IsValidCsrf(HttpContext context, IAntiforgery antiforgery) { try { await antiforgery.ValidateRequestAsync(context); return true; } catch (AntiforgeryValidationException) { return false; } }
     internal static async Task<string> Actor(HttpContext context, UserManager<ApplicationUser> users) => (await users.GetUserAsync(context.User))?.Id ?? throw new UnauthorizedAccessException();
-    internal static void AddAudit(ApplicationDbContext db, Guid organizationId, string actorId, string action, string? targetUserId = null, string? targetUserNameSnapshot = null, string? targetUserEmailSnapshot = null) => db.OrganizationAuditRecords.Add(new OrganizationAuditRecord { OrganizationId = organizationId, ActorUserId = actorId, TargetUserId = targetUserId, TargetUserNameSnapshot = targetUserNameSnapshot, TargetUserEmailSnapshot = targetUserEmailSnapshot, Action = action });
+    internal static void AddAudit(ApplicationDbContext db, Guid organizationId, string actorId, string action, string? targetUserId = null, string? targetUserNameSnapshot = null, string? targetUserEmailSnapshot = null, string? featureKey = null) => db.OrganizationAuditRecords.Add(new OrganizationAuditRecord { OrganizationId = organizationId, ActorUserId = actorId, TargetUserId = targetUserId, TargetUserNameSnapshot = targetUserNameSnapshot, TargetUserEmailSnapshot = targetUserEmailSnapshot, FeatureKey = featureKey, Action = action });
     private static async Task<IResult> SaveAsync(ApplicationDbContext db, Func<IResult> result) { try { await db.SaveChangesAsync(); return result(); } catch (DbUpdateException) { return DuplicateSlug(); } }
 }
