@@ -267,10 +267,6 @@ namespace Tsdt.Api.Identity.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
 
-                    b.Property<string>("FeatureKey")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
                     b.Property<string>("ActorUserId")
                         .IsRequired()
                         .HasColumnType("text");
@@ -843,6 +839,10 @@ namespace Tsdt.Api.Identity.Migrations
                     b.Property<string>("TargetUserEmailSnapshot")
                         .HasMaxLength(254)
                         .HasColumnType("character varying(254)");
+
+                    b.Property<string>("FeatureKey")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
 
                     b.Property<DateTimeOffset>("OccurredAtUtc")
                         .HasColumnType("timestamp with time zone");
